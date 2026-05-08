@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+import os
+
 from pydantic_settings import BaseSettings
+
+# Defensive cleanup: shells sometimes export sensitive keys as empty strings
+# (e.g. `export ANTHROPIC_API_KEY=` in a profile to silence other tools).
+# Drop empties before settings construction so .env values aren't shadowed.
+for _key in ("PIPELINE_API_KEY", "DATABASE_URL"):
+    if os.environ.get(_key) == "":
+        del os.environ[_key]
 
 
 class Settings(BaseSettings):
