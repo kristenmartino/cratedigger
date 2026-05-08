@@ -62,7 +62,7 @@ pnpm api:dev         # → http://localhost:8000
 pnpm agent:run-issue
 ```
 
-See [`cratedigger-handoff/CLAUDE.md`](../cratedigger-handoff/CLAUDE.md) for project context, [`SPEC.md`](../cratedigger-handoff/SPEC.md) for architecture, [`SPRINT_PLAN.md`](../cratedigger-handoff/SPRINT_PLAN.md) for the build plan.
+See [`docs/CLAUDE.md`](./docs/CLAUDE.md) for project context, [`SPEC.md`](./docs/SPEC.md) for architecture, [`SPRINT_PLAN.md`](./docs/SPRINT_PLAN.md) for the build plan.
 
 ## Conventions
 
@@ -73,4 +73,4 @@ See [`cratedigger-handoff/CLAUDE.md`](../cratedigger-handoff/CLAUDE.md) for proj
 
 ## What's harvested from Sift
 
-This repo borrows leaf utilities and conventions from a prior project (Sift, a news aggregator). See [`HARVESTED_FROM_SIFT.md`](./HARVESTED_FROM_SIFT.md) for the manifest. The architecture is fresh per `cratedigger-handoff/SPEC.md`; only specific files transferred.
+This repo borrows leaf utilities and conventions from a prior project (Sift, a news aggregator). See [`HARVESTED_FROM_SIFT.md`](./HARVESTED_FROM_SIFT.md) for the manifest. The architecture is fresh per `docs/SPEC.md`; only specific files transferred.

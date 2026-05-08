@@ -1,0 +1,2264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crate Digger — Issue 04</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Caveat:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ─────────────────────────────────────────
+     COLOR SYSTEM
+     Limited, intentional. Coral primary,
+     teal secondary, mustard for highlights only.
+     ───────────────────────────────────────── */
+  :root {
+    --paper: #EFE4CC;
+    --paper-deep: #E2D4B5;
+    --paper-light: #F6EED9;
+    --ink: #15191D;
+    --ink-soft: #2D353A;
+    --ink-faint: #6E7378;
+    --ink-quiet: #969799;
+    --teal: #1E4543;
+    --teal-bright: #2C6764;
+    --coral: #C8412B;
+    --coral-deep: #93311F;
+    --mustard: #D29826;
+    --rule: rgba(21, 25, 29, 0.16);
+    --rule-soft: rgba(21, 25, 29, 0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    font-feature-settings: "kern", "liga", "onum", "ss01";
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Spectral', Georgia, serif;
+    font-size: 16px;
+    line-height: 1.65;
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* PAPER GRAIN — subtle, considered */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.45;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.55 0 0 0 0 0.45 0 0 0 0 0.25 0 0 0 0.07 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    z-index: 200;
+    mix-blend-mode: multiply;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse at 8% 6%, rgba(200, 65, 43, 0.05) 0%, transparent 35%),
+      radial-gradient(ellipse at 92% 84%, rgba(30, 69, 67, 0.07) 0%, transparent 42%);
+    z-index: 0;
+  }
+
+  .page {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 0 60px 100px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ═════════════════════════════════════════
+     METADATA STRIP — replaces the marquee
+     Stats from the system, quietly confident
+     ═════════════════════════════════════════ */
+  .stats-bar {
+    background: var(--ink);
+    color: var(--paper);
+    margin: 0 -60px 64px;
+    padding: 14px 60px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 24px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    border-bottom: 3px solid var(--ink);
+  }
+
+  .stats-bar .stat {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: rgba(239, 228, 204, 0.55);
+  }
+
+  .stats-bar .stat .num {
+    color: var(--mustard);
+    font-size: 14px;
+    font-weight: 500;
+    font-feature-settings: "tnum";
+    letter-spacing: 0;
+  }
+
+  .stats-bar .stat .colon {
+    color: var(--coral);
+    margin: 0 4px;
+  }
+
+  /* ═════════════════════════════════════════
+     MASTHEAD
+     Centered, asymmetric meta. Refined wordmark.
+     ═════════════════════════════════════════ */
+  .masthead {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 40px;
+    padding: 30px 0 50px;
+    border-bottom: 1px solid var(--ink);
+    margin-bottom: 80px;
+  }
+
+  .meta-side {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    line-height: 1.9;
+  }
+
+  .meta-side .label {
+    color: var(--coral);
+    display: block;
+    margin-bottom: 2px;
+    font-weight: 500;
+  }
+
+  .meta-side .val {
+    color: var(--ink);
+    font-feature-settings: "tnum";
+    letter-spacing: 0.1em;
+    font-size: 11px;
+  }
+
+  .meta-side.left { text-align: right; padding-right: 8px; }
+  .meta-side.right { text-align: left; padding-left: 8px; }
+
+  /* WORDMARK — refined, restrained */
+  .wordmark-block {
+    text-align: center;
+    position: relative;
+  }
+
+  .wordmark {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: clamp(64px, 9vw, 104px);
+    line-height: 0.85;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    margin: 0;
+    display: inline-block;
+    position: relative;
+    white-space: nowrap;
+  }
+
+  /* Decorative C — slightly larger, quietly distinct */
+  .wordmark .open-c {
+    font-size: 1.18em;
+    line-height: 0.74;
+    color: var(--ink);
+    display: inline-block;
+    transform: translateY(2px);
+    margin-right: -0.04em;
+  }
+
+  /* The D in Digger gets a quieter sister-treatment to the C */
+  .wordmark .open-d {
+    color: var(--ink);
+    display: inline-block;
+    margin-left: 0.04em;
+  }
+
+  /* Single accent dot */
+  .wordmark .dot {
+    color: var(--coral);
+    font-style: normal;
+    font-size: 0.55em;
+    position: relative;
+    top: -0.05em;
+    margin-left: 0.05em;
+  }
+
+  .tagline {
+    margin-top: 20px;
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 17px;
+    color: var(--ink-soft);
+    letter-spacing: 0.005em;
+  }
+
+  /* ═════════════════════════════════════════
+     ISSUE OPENING
+     Quiet, atmospheric. Sets the issue tone.
+     ═════════════════════════════════════════ */
+  .issue-open {
+    margin-bottom: 100px;
+    text-align: center;
+    position: relative;
+  }
+
+  .issue-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--coral);
+    margin-bottom: 28px;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .issue-eyebrow::before, .issue-eyebrow::after {
+    content: '';
+    width: 22px;
+    height: 1px;
+    background: var(--coral);
+  }
+
+  .issue-display {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 168px;
+    line-height: 0.78;
+    color: var(--ink);
+    letter-spacing: -0.045em;
+    margin-bottom: 24px;
+    position: relative;
+    display: inline-block;
+  }
+
+  /* Hand-drawn underline mark */
+  .issue-display::after {
+    content: '';
+    position: absolute;
+    left: -8%;
+    right: -8%;
+    bottom: 6px;
+    height: 14px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 14'><path d='M3 9 Q 40 3 80 7 T 160 6 Q 200 4 237 8' stroke='%23C8412B' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>");
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    opacity: 0.85;
+  }
+
+  .issue-date {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 21px;
+    color: var(--ink-soft);
+    margin-top: 24px;
+    line-height: 1.4;
+  }
+
+  .issue-date .sep {
+    color: var(--coral);
+    margin: 0 10px;
+    font-style: normal;
+  }
+
+  /* ═════════════════════════════════════════
+     EDITOR'S NOTE
+     Inline, quiet. Drop cap done with care.
+     ═════════════════════════════════════════ */
+  .editors-note {
+    max-width: 580px;
+    margin: 0 auto 110px;
+    padding: 0 20px;
+    position: relative;
+  }
+
+  .note-byline {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    text-align: center;
+    margin-bottom: 32px;
+    position: relative;
+  }
+
+  .note-byline::before, .note-byline::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 50px;
+    height: 0.5px;
+    background: var(--rule);
+  }
+  .note-byline::before { left: 50%; margin-left: -130px; }
+  .note-byline::after { right: 50%; margin-right: -130px; }
+
+  .note-text {
+    font-family: 'Spectral', serif;
+    font-size: 19px;
+    line-height: 1.65;
+    color: var(--ink-soft);
+    font-weight: 300;
+    text-align: left;
+  }
+
+  .note-text::first-letter {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 86px;
+    float: left;
+    line-height: 0.72;
+    margin: 6px 12px 0 0;
+    color: var(--coral);
+    padding-top: 8px;
+  }
+
+  .note-text em {
+    font-style: italic;
+    color: var(--coral-deep);
+  }
+
+  .note-text strong {
+    font-weight: 500;
+    color: var(--teal);
+  }
+
+  .note-signature {
+    margin-top: 28px;
+    text-align: right;
+    font-family: 'Caveat', cursive;
+    font-size: 32px;
+    color: var(--coral);
+    line-height: 1;
+    letter-spacing: 0.02em;
+  }
+
+  /* ═════════════════════════════════════════
+     SECTION HEADER
+     Stronger restraint. Single rule + meta.
+     ═════════════════════════════════════════ */
+  .sec-header {
+    margin-bottom: 60px;
+    padding-bottom: 24px;
+    border-bottom: 1.5px solid var(--ink);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 32px;
+    align-items: end;
+  }
+
+  .sec-header .num {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 64px;
+    line-height: 0.85;
+    color: var(--mustard);
+    -webkit-text-stroke: 1.5px var(--ink);
+    letter-spacing: -0.03em;
+  }
+
+  .sec-header h2 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 56px;
+    line-height: 0.92;
+    color: var(--ink);
+    letter-spacing: -0.025em;
+  }
+
+  .sec-header h2 .acc { color: var(--coral); }
+
+  .sec-header .meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    line-height: 1.7;
+    text-align: right;
+    padding-bottom: 6px;
+  }
+
+  .sec-header .meta .acc { color: var(--coral); display: block; }
+
+  /* ═════════════════════════════════════════
+     LEAD TRACK
+     Full editorial spread. Hero treatment.
+     ═════════════════════════════════════════ */
+  .lead {
+    margin-bottom: 120px;
+    position: relative;
+  }
+
+  .lead-cover-block {
+    position: relative;
+    margin-bottom: 56px;
+  }
+
+  .lead-cover {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    border: 1px solid var(--ink);
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 1px 0 rgba(21, 25, 29, 0.05), 0 24px 60px -16px rgba(21, 25, 29, 0.18);
+  }
+
+  .lead-cover svg { width: 100%; height: 100%; display: block; }
+
+  .lead-cover-meta {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    align-items: center;
+  }
+
+  .lead-cover-meta .left { color: var(--coral); font-weight: 500; }
+  .lead-cover-meta .center {
+    color: var(--ink-faint);
+    text-align: center;
+    letter-spacing: 0.25em;
+  }
+  .lead-cover-meta .right { text-align: right; color: var(--ink); font-feature-settings: "tnum"; }
+
+  .lead-num-tag {
+    position: absolute;
+    top: 28px;
+    left: 28px;
+    width: 60px;
+    height: 60px;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid var(--ink);
+    z-index: 5;
+    letter-spacing: -0.04em;
+  }
+
+  .lead-body {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 60px;
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  .lead-meta-col {
+    padding-top: 6px;
+    border-top: 1.5px solid var(--ink);
+  }
+
+  .lead-meta-col .source-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--coral);
+    color: var(--paper-light);
+    padding: 6px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-top: 22px;
+    margin-bottom: 24px;
+    font-weight: 500;
+  }
+
+  .lead-meta-col .source-tag::before { content: '◆'; font-size: 9px; color: var(--mustard); }
+
+  .lead-meta-col .label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+
+  .lead-meta-col .val {
+    font-family: 'Spectral', serif;
+    font-style: italic;
+    font-size: 17px;
+    color: var(--ink);
+    margin-bottom: 18px;
+    line-height: 1.3;
+    font-weight: 300;
+  }
+
+  .lead-meta-col .val.bigger {
+    font-size: 20px;
+  }
+
+  .lead-text-col {
+    padding-top: 6px;
+  }
+
+  .lead-text-col .kicker {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--coral);
+    margin-bottom: 14px;
+    padding-top: 6px;
+    border-top: 1.5px solid var(--ink);
+  }
+
+  .lead-title {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 76px;
+    line-height: 0.92;
+    color: var(--ink);
+    letter-spacing: -0.035em;
+    margin-bottom: 28px;
+  }
+
+  .lead-dek {
+    font-family: 'Spectral', serif;
+    font-style: italic;
+    font-size: 21px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    margin-bottom: 36px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--rule);
+    font-weight: 300;
+  }
+
+  .lead-prose {
+    font-family: 'Spectral', serif;
+    font-size: 17px;
+    line-height: 1.72;
+    color: var(--ink-soft);
+    font-weight: 300;
+    margin-bottom: 22px;
+  }
+
+  .lead-prose em {
+    color: var(--coral-deep);
+    font-style: italic;
+    font-weight: 400;
+  }
+
+  .lead-prose strong {
+    font-weight: 500;
+    color: var(--teal);
+  }
+
+  /* PULL QUOTE */
+  .pullquote {
+    margin: 48px 0;
+    padding: 0;
+    text-align: center;
+    position: relative;
+  }
+
+  .pullquote::before {
+    content: '';
+    display: block;
+    width: 32px;
+    height: 1.5px;
+    background: var(--coral);
+    margin: 0 auto 24px;
+  }
+
+  .pullquote::after {
+    content: '';
+    display: block;
+    width: 32px;
+    height: 1.5px;
+    background: var(--coral);
+    margin: 24px auto 0;
+  }
+
+  .pullquote q {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 32px;
+    line-height: 1.2;
+    color: var(--ink);
+    letter-spacing: -0.015em;
+    quotes: '“' '”';
+  }
+
+  /* ACTIONS */
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding-top: 28px;
+    margin-top: 12px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .listen {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 13px 22px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    font-weight: 500;
+  }
+
+  .listen:hover { background: var(--coral); }
+  .listen .arrow { color: var(--mustard); font-size: 12px; }
+
+  .feedback {
+    display: flex;
+    margin-left: auto;
+    border: 1px solid var(--ink);
+  }
+
+  .fb {
+    background: var(--paper);
+    border: none;
+    border-right: 1px solid var(--ink);
+    padding: 10px 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .fb:last-child { border-right: none; }
+  .fb.hit:hover { background: var(--mustard); }
+  .fb.miss:hover { background: var(--ink); color: var(--paper); }
+  .fb.more:hover { background: var(--teal); color: var(--paper-light); }
+
+  /* ═════════════════════════════════════════
+     INSIDE PAGES
+     Stacked spreads. Alternating cover side.
+     ═════════════════════════════════════════ */
+  .inside {
+    display: flex;
+    flex-direction: column;
+    gap: 80px;
+    margin-bottom: 100px;
+  }
+
+  .inside-track {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: start;
+    position: relative;
+  }
+
+  .inside-track.flip .cover-block { order: 2; }
+
+  .cover-block { position: relative; }
+
+  .it-cover {
+    width: 100%;
+    aspect-ratio: 1;
+    border: 1px solid var(--ink);
+    overflow: hidden;
+    box-shadow: 0 16px 36px -12px rgba(21, 25, 29, 0.16);
+    position: relative;
+  }
+
+  .it-cover svg { width: 100%; height: 100%; display: block; }
+
+  .it-num-tag {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    width: 44px;
+    height: 44px;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 26px;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+    letter-spacing: -0.04em;
+  }
+
+  .it-cover-meta {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding-top: 10px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .it-cover-meta .label-name { color: var(--coral); font-weight: 500; }
+
+  .text-block {
+    padding-top: 4px;
+  }
+
+  .it-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--teal);
+    color: var(--paper-light);
+    padding: 5px 11px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    font-weight: 500;
+  }
+
+  .it-source::before { content: '◆'; font-size: 9px; color: var(--mustard); }
+
+  .inside-track.flip .it-source { background: var(--coral); }
+
+  .it-artist {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--teal);
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+
+  .it-title {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 46px;
+    line-height: 0.95;
+    color: var(--ink);
+    letter-spacing: -0.025em;
+    margin-bottom: 20px;
+  }
+
+  .it-prose {
+    font-family: 'Spectral', serif;
+    font-size: 16.5px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    font-weight: 300;
+    margin-bottom: 28px;
+  }
+
+  .it-prose em { color: var(--coral-deep); font-style: italic; font-weight: 400; }
+  .it-prose strong { color: var(--teal); font-weight: 500; }
+
+  /* ═════════════════════════════════════════
+     WITHHELD TRACK
+     Treated more elegantly than v2.
+     ═════════════════════════════════════════ */
+  .withheld {
+    margin-bottom: 100px;
+    padding: 50px 60px;
+    background: var(--paper-deep);
+    border: 1px solid var(--ink);
+    display: grid;
+    grid-template-columns: 200px 1fr auto;
+    gap: 50px;
+    align-items: center;
+    position: relative;
+  }
+
+  .withheld::before {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    border: 0.5px dashed var(--ink);
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  .wh-seal {
+    width: 200px;
+    height: 200px;
+    position: relative;
+  }
+
+  .wh-seal svg { width: 100%; height: 100%; display: block; }
+
+  .wh-text .label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--coral);
+    margin-bottom: 14px;
+    font-weight: 500;
+  }
+
+  .wh-text h3 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 40px;
+    line-height: 1;
+    color: var(--ink);
+    letter-spacing: -0.025em;
+    margin-bottom: 14px;
+  }
+
+  .wh-text p {
+    font-family: 'Spectral', serif;
+    font-style: italic;
+    font-size: 16.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    font-weight: 300;
+    max-width: 460px;
+  }
+
+  .wh-text p em { color: var(--coral-deep); }
+
+  .wh-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 14px 22px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .wh-cta:hover { background: var(--coral); }
+  .wh-cta .arrow { color: var(--mustard); }
+
+  /* ═════════════════════════════════════════
+     BACK MATTER
+     Considered colophon. Quiet finale.
+     ═════════════════════════════════════════ */
+  .back-matter {
+    margin-top: 120px;
+    padding-top: 60px;
+    border-top: 2px solid var(--ink);
+  }
+
+  .next-issue {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 50px 60px;
+    margin-bottom: 80px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .next-issue::after {
+    content: '';
+    position: absolute;
+    bottom: -30px;
+    right: -30px;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--coral) 0%, transparent 70%);
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .next-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--mustard);
+    margin-bottom: 18px;
+  }
+
+  .next-text {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 36px;
+    line-height: 1.2;
+    color: var(--paper);
+    max-width: 640px;
+    letter-spacing: -0.015em;
+  }
+
+  .next-text strong {
+    color: var(--mustard);
+    font-style: normal;
+    font-weight: 400;
+  }
+
+  .colophon {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 60px;
+    padding: 40px 0 50px;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  .colo-block h4 {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--coral);
+    margin-bottom: 16px;
+    font-weight: 500;
+  }
+
+  .colo-block p, .colo-block li {
+    font-family: 'Spectral', serif;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--ink-soft);
+    font-weight: 300;
+  }
+
+  .colo-block ul { list-style: none; padding: 0; }
+  .colo-block li { margin-bottom: 4px; }
+  .colo-block em { font-style: italic; color: var(--teal); font-weight: 400; }
+
+  .archive-row {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin: 50px 0 70px;
+    flex-wrap: wrap;
+    padding: 30px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .archive-row a {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: 19px;
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1.5px solid var(--coral);
+    padding-bottom: 3px;
+    transition: color 0.2s ease;
+  }
+
+  .archive-row a:hover { color: var(--coral); }
+
+  .signoff-block {
+    text-align: center;
+    margin-top: 60px;
+  }
+
+  .signoff {
+    font-family: 'Caveat', cursive;
+    font-size: 38px;
+    color: var(--coral);
+    line-height: 1;
+    letter-spacing: 0.01em;
+  }
+
+  .signoff .heart {
+    color: var(--mustard);
+    font-size: 0.85em;
+  }
+
+  .footer-mark {
+    margin-top: 32px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .footer-mark .pip {
+    color: var(--coral);
+    margin: 0 8px;
+  }
+
+  /* ═════════════════════════════════════════
+     V4 — SYSTEM-AWARENESS LAYER
+     Quiet ambient information about the agent
+     and the personalization, layered into the
+     reading flow without breaking it.
+     ═════════════════════════════════════════ */
+
+  /* SYSTEM STRIP — replaces the static stats bar.
+     Now shows live agent activity, this-week summary,
+     and a handoff to the archive surface. */
+  .system-strip {
+    background: var(--ink);
+    color: var(--paper);
+    margin: 0 -60px 60px;
+    padding: 14px 60px;
+    border-bottom: 3px solid var(--ink);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 28px;
+    align-items: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .ss-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(239, 228, 204, 0.55);
+    white-space: nowrap;
+  }
+
+  .ss-agent .ss-label { color: var(--coral); font-weight: 500; }
+  .ss-agent .ss-text { color: var(--paper); }
+
+  .ss-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--coral);
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(200, 65, 43, 0.6);
+    animation: ss-pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes ss-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(200, 65, 43, 0.6); }
+    50% { box-shadow: 0 0 0 6px rgba(200, 65, 43, 0); }
+  }
+
+  .ss-time { color: rgba(239, 228, 204, 0.4); margin-left: 6px; }
+
+  .ss-week {
+    justify-self: center;
+    gap: 14px;
+  }
+  .ss-week .ss-stat strong {
+    color: var(--mustard);
+    font-weight: 500;
+    margin-right: 4px;
+    font-feature-settings: "tnum";
+    letter-spacing: 0;
+  }
+  .ss-week .ss-sep { color: var(--coral); margin: 0 -2px; }
+
+  .ss-archive { justify-self: end; }
+  .ss-link {
+    color: var(--mustard);
+    text-decoration: none;
+    border: 1px solid rgba(217, 152, 38, 0.4);
+    padding: 5px 11px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+  .ss-link:hover {
+    background: var(--mustard);
+    color: var(--ink);
+    border-color: var(--mustard);
+  }
+
+  /* SIGNAL BLOCK — appears above each record's source-tag.
+     Tells the reader why this record made the cut and how
+     confident the agent is. Lead/Steady/Stretch categories. */
+  .signal-block {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+    padding: 11px 16px;
+    background: var(--paper-light);
+    border: 1px solid var(--ink);
+    border-left-width: 4px;
+  }
+
+  .signal-block.lead { border-left-color: var(--mustard); }
+  .signal-block.steady { border-left-color: var(--teal); }
+  .signal-block.stretch { border-left-color: var(--coral); }
+
+  .signal-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--ink);
+    flex-shrink: 0;
+  }
+
+  .signal-block.lead .signal-badge { color: var(--coral-deep); }
+  .signal-block.steady .signal-badge { color: var(--teal); }
+  .signal-block.stretch .signal-badge { color: var(--coral); }
+
+  .signal-meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    color: var(--ink-soft);
+    margin-left: auto;
+    text-align: right;
+    text-transform: none;
+  }
+
+  .signal-meta strong {
+    color: var(--ink);
+    font-weight: 500;
+    margin: 0 2px;
+    font-feature-settings: "tnum";
+    letter-spacing: 0;
+  }
+
+  .signal-meta .dim { color: var(--ink-faint); }
+
+  /* MATCHED SIGNALS — appears below each record's prose.
+     Shows the actual model signals that surfaced this record.
+     This is the "show your work" move. */
+  .matched-signals {
+    margin: 24px 0 28px;
+    padding: 16px 20px 18px;
+    background: var(--paper-light);
+    border: 1px dashed var(--rule);
+    position: relative;
+  }
+
+  .ms-label {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--coral);
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+
+  .ms-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .ms-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding: 5px 10px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    line-height: 1.3;
+  }
+
+  .ms-tag.boosted {
+    background: var(--teal);
+    color: var(--paper-light);
+    border-color: var(--teal);
+    font-weight: 500;
+  }
+
+  .ms-tag .weight {
+    color: var(--ink-faint);
+    margin-left: 4px;
+    font-feature-settings: "tnum";
+  }
+  .ms-tag.boosted .weight { color: rgba(239, 228, 204, 0.7); }
+
+  .ms-tag.stretch {
+    background: var(--paper);
+    color: var(--coral);
+    border-color: var(--coral);
+    border-style: dashed;
+  }
+
+  /* ARCHIVE LINK — small handoff in each record's actions. */
+  .archive-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1.5px solid var(--coral);
+    padding-bottom: 2px;
+    font-weight: 500;
+    margin-left: auto;
+    align-self: center;
+  }
+
+  .archive-link:hover { color: var(--coral); }
+
+  /* TRACK NAV — sticky right-side nav for desktop scroll. */
+  .track-nav {
+    position: fixed;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 14px 6px;
+    background: var(--paper-light);
+    border: 1px solid var(--ink);
+    font-family: 'DM Mono', monospace;
+    box-shadow: 0 8px 20px -8px rgba(21, 25, 29, 0.18);
+  }
+
+  .track-nav .tn-label {
+    font-size: 8px;
+    color: var(--coral);
+    text-align: center;
+    border-bottom: 1px solid var(--rule);
+    padding: 0 6px 8px;
+    margin-bottom: 6px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .track-nav a {
+    display: block;
+    padding: 7px 12px;
+    text-align: center;
+    color: var(--ink-soft);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: all 0.15s ease;
+    font-feature-settings: "tnum";
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
+
+  .track-nav a:hover {
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  .track-nav a.active {
+    background: var(--ink);
+    color: var(--mustard);
+    border-left-color: var(--coral);
+  }
+
+  .track-nav a.withheld {
+    color: var(--coral);
+    font-style: italic;
+  }
+
+  .track-nav a.withheld:hover {
+    background: var(--coral);
+    color: var(--paper-light);
+  }
+
+  /* NOW DIGGING — quiet ambient widget near the footer.
+     Surfaces the agent's continuous activity in the reading
+     surface, not just the archive. */
+  .now-digging {
+    margin: 20px auto 60px;
+    max-width: 600px;
+    padding: 22px 26px;
+    background: var(--paper-light);
+    border: 1px solid var(--ink);
+    border-left-width: 4px;
+    border-left-color: var(--coral);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: relative;
+  }
+
+  .nd-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--coral);
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  .nd-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--coral);
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(200, 65, 43, 0.6);
+    animation: ss-pulse 2.4s ease-in-out infinite;
+  }
+
+  .nd-text {
+    font-family: 'Spectral', serif;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    font-style: italic;
+    font-weight: 300;
+    flex: 1;
+  }
+
+  .nd-text strong {
+    color: var(--ink);
+    font-style: normal;
+    font-weight: 500;
+  }
+
+  .nd-time {
+    margin-left: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+
+  /* ═════════════════════════════════════════
+     UNIVERSAL FIXES (apply at all sizes)
+     ═════════════════════════════════════════ */
+  .lead-meta-col .label,
+  .lead-meta-col .val { display: block; }
+
+  .meta-side .label,
+  .meta-side .val { display: block; }
+
+  .wordmark { white-space: nowrap; }
+
+  /* ═════════════════════════════════════════
+     MOBILE — ≤768px
+     ═════════════════════════════════════════ */
+  @media (max-width: 768px) {
+    .page { padding: 0 22px 80px; }
+
+    /* Stats bar — horizontal scroll */
+    .stats-bar {
+      margin: 0 -22px 44px;
+      padding: 14px 22px;
+      grid-template-columns: none;
+      display: flex;
+      overflow-x: auto;
+      gap: 22px;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .stats-bar::-webkit-scrollbar { display: none; }
+    .stats-bar .stat { flex-shrink: 0; white-space: nowrap; }
+
+    /* Masthead — stack */
+    .masthead {
+      grid-template-columns: 1fr;
+      gap: 28px;
+      text-align: center;
+      padding: 28px 0 40px;
+      margin-bottom: 56px;
+    }
+    .meta-side.left,
+    .meta-side.right {
+      text-align: center;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      align-items: baseline;
+    }
+    .meta-side .label,
+    .meta-side .val { display: inline; }
+    .meta-side .label { letter-spacing: 0.18em; }
+
+    .wordmark { font-size: 60px; line-height: 0.88; }
+    .wordmark .open-c { font-size: 1.08em; }
+    .tagline { font-size: 15px; margin-top: 14px; padding: 0 12px; }
+
+    /* Issue opening */
+    .issue-open { margin-bottom: 70px; }
+    .issue-eyebrow { font-size: 9.5px; }
+    .issue-display { font-size: 116px; }
+    .issue-display::after {
+      left: -2%; right: -2%;
+      bottom: 4px;
+      height: 10px;
+    }
+    .issue-date {
+      font-size: 16px;
+      padding: 0 8px;
+      line-height: 1.55;
+      margin-top: 22px;
+    }
+    .issue-date .sep { margin: 0 6px; }
+
+    /* Editor's note */
+    .editors-note { margin-bottom: 72px; padding: 0; max-width: 100%; }
+    .note-text { font-size: 17px; line-height: 1.65; }
+    .note-text::first-letter {
+      font-size: 64px;
+      margin: 6px 10px -2px 0;
+      padding-top: 4px;
+    }
+    .note-byline::before,
+    .note-byline::after { display: none; }
+    .note-signature { font-size: 28px; }
+
+    /* Section header */
+    .sec-header {
+      grid-template-columns: auto 1fr;
+      gap: 16px;
+      margin-bottom: 44px;
+      padding-bottom: 20px;
+      align-items: end;
+    }
+    .sec-header .num { font-size: 44px; }
+    .sec-header h2 { font-size: 32px; line-height: 0.95; }
+    .sec-header .meta {
+      grid-column: 1 / -1;
+      text-align: left;
+      padding: 0;
+      margin-top: 8px;
+      font-size: 9px;
+      line-height: 1.6;
+    }
+    .sec-header .meta .acc { display: inline; margin-right: 6px; }
+
+    /* LEAD */
+    .lead { margin-bottom: 72px; }
+    .lead-cover-block { margin-bottom: 32px; }
+    .lead-cover { aspect-ratio: 4 / 3; }
+    .lead-num-tag {
+      width: 44px;
+      height: 44px;
+      font-size: 26px;
+      top: 14px;
+      left: 14px;
+    }
+    .lead-cover-meta {
+      grid-template-columns: 1fr;
+      gap: 4px;
+      text-align: left;
+      font-size: 9px;
+      letter-spacing: 0.16em;
+    }
+    .lead-cover-meta .center,
+    .lead-cover-meta .right { text-align: left; }
+
+    .lead-body {
+      grid-template-columns: 1fr;
+      gap: 32px;
+      max-width: 100%;
+    }
+
+    .lead-meta-col {
+      padding: 22px 0 24px;
+      border-top: 1.5px solid var(--ink);
+      border-bottom: 1px solid var(--rule);
+    }
+    .lead-meta-col .source-tag { margin-top: 0; margin-bottom: 22px; }
+    .lead-meta-col .val { font-size: 16px; margin-bottom: 14px; line-height: 1.3; }
+    .lead-meta-col .val.bigger { font-size: 19px; }
+
+    .lead-text-col { padding-top: 0; }
+    .lead-text-col .kicker { padding-top: 0; border-top: none; }
+    .lead-title { font-size: 44px; line-height: 0.95; margin-bottom: 18px; letter-spacing: -0.03em; }
+    .lead-dek { font-size: 17px; margin-bottom: 26px; padding-bottom: 22px; }
+    .lead-prose { font-size: 16px; line-height: 1.7; margin-bottom: 18px; }
+
+    .pullquote { margin: 32px 0; }
+    .pullquote q { font-size: 22px; line-height: 1.25; }
+    .pullquote::before,
+    .pullquote::after { width: 24px; margin-bottom: 18px; margin-top: 18px; }
+
+    /* Actions */
+    .actions {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+      padding-top: 22px;
+    }
+    .listen { justify-content: center; padding: 14px 18px; }
+    .feedback {
+      margin-left: 0;
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+    .fb {
+      padding: 11px 6px;
+      text-align: center;
+      font-size: 9px;
+      letter-spacing: 0.14em;
+    }
+
+    /* Inside tracks — stack */
+    .inside { gap: 56px; margin-bottom: 70px; }
+    .inside-track {
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .inside-track.flip .cover-block { order: 0; }
+    .it-num-tag {
+      width: 38px;
+      height: 38px;
+      font-size: 22px;
+      top: 14px;
+      left: 14px;
+    }
+    .it-cover-meta {
+      font-size: 9px;
+      letter-spacing: 0.14em;
+    }
+    .it-source { font-size: 9px; padding: 5px 10px; }
+    .it-title { font-size: 32px; line-height: 1; margin-bottom: 16px; }
+    .it-prose { font-size: 16px; line-height: 1.65; margin-bottom: 22px; }
+
+    /* Withheld */
+    .withheld {
+      grid-template-columns: 1fr;
+      gap: 26px;
+      padding: 40px 26px;
+      text-align: center;
+      margin-bottom: 70px;
+    }
+    .withheld::before { inset: 8px; }
+    .wh-seal { width: 160px; height: 160px; margin: 0 auto; }
+    .wh-text h3 { font-size: 30px; }
+    .wh-text p { font-size: 15.5px; max-width: 100%; }
+    .wh-cta {
+      align-self: center;
+      padding: 13px 22px;
+      justify-self: center;
+    }
+
+    /* Back matter */
+    .back-matter { margin-top: 80px; padding-top: 44px; }
+    .next-issue { padding: 36px 26px; margin-bottom: 56px; }
+    .next-label { font-size: 9.5px; }
+    .next-text { font-size: 24px; line-height: 1.25; }
+    .next-issue::after {
+      width: 140px;
+      height: 140px;
+      bottom: -20px;
+      right: -20px;
+    }
+
+    /* Colophon — stack */
+    .colophon {
+      grid-template-columns: 1fr;
+      gap: 36px;
+      padding: 30px 0 40px;
+    }
+
+    .archive-row {
+      gap: 18px;
+      margin: 36px 0 50px;
+      padding: 22px 0;
+    }
+    .archive-row a { font-size: 16px; }
+
+    .signoff-block { margin-top: 44px; }
+    .signoff { font-size: 30px; }
+    .footer-mark { font-size: 8.5px; letter-spacing: 0.22em; }
+
+    /* V4 elements responsive */
+    .system-strip {
+      margin: 0 -22px 44px;
+      padding: 14px 22px;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .ss-week { justify-self: start; flex-wrap: wrap; gap: 10px; }
+    .ss-archive { justify-self: start; }
+
+    .signal-block {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 12px 14px;
+    }
+    .signal-meta { margin-left: 0; text-align: left; }
+
+    .matched-signals { padding: 14px 16px 16px; margin: 20px 0 24px; }
+    .ms-tag { font-size: 9.5px; padding: 4px 8px; }
+
+    .archive-link { margin-left: 0; align-self: flex-start; font-size: 9px; }
+
+    .track-nav { display: none; }
+
+    .now-digging {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 18px 20px;
+      margin: 12px auto 50px;
+    }
+    .nd-time { margin-left: 0; }
+  }
+
+  /* ═════════════════════════════════════════
+     NARROW PHONES — ≤400px
+     ═════════════════════════════════════════ */
+  @media (max-width: 400px) {
+    .page { padding: 0 18px 70px; }
+    .wordmark { font-size: 52px; }
+    .issue-display { font-size: 96px; }
+    .lead-title { font-size: 38px; }
+    .it-title { font-size: 28px; }
+    .next-text { font-size: 22px; }
+    .meta-side.left,
+    .meta-side.right {
+      flex-direction: column;
+      gap: 4px;
+      align-items: center;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═════ STICKY TRACK NAV ═════
+     Right-side floating nav, desktop only. -->
+<nav class="track-nav">
+  <div class="tn-label">№ 04</div>
+  <a href="#track-01" class="active">01</a>
+  <a href="#track-02">02</a>
+  <a href="#track-03">03</a>
+  <a href="#track-04">04</a>
+  <a href="#track-05" class="withheld">05·F</a>
+</nav>
+
+<div class="page">
+
+  <!-- ═════ SYSTEM STRIP ═════
+       Live agent activity, this-week summary, archive handoff. -->
+  <div class="system-strip">
+    <div class="ss-section ss-agent">
+      <span class="ss-dot"></span>
+      <span class="ss-label">Agent</span>
+      <span class="ss-text">Reading Boomkat for issue 05</span>
+      <span class="ss-time">— 2m ago</span>
+    </div>
+
+    <div class="ss-section ss-week">
+      <span class="ss-stat"><strong>11</strong>sources</span>
+      <span class="ss-sep">·</span>
+      <span class="ss-stat"><strong>348</strong>scanned</span>
+      <span class="ss-sep">·</span>
+      <span class="ss-stat"><strong>47</strong>considered</span>
+      <span class="ss-sep">·</span>
+      <span class="ss-stat"><strong>04</strong>surfaced</span>
+    </div>
+
+    <div class="ss-section ss-archive">
+      <a href="#" class="ss-link">↗ Open the Archive</a>
+    </div>
+  </div>
+
+  <!-- ═════ MASTHEAD ═════ -->
+  <header class="masthead">
+
+    <div class="meta-side left">
+      <span class="label">Vol. one</span>
+      <span class="val">Issue Four</span>
+    </div>
+
+    <div class="wordmark-block">
+      <h1 class="wordmark"><span class="open-c">C</span>rate <span class="open-d">D</span>igger<span class="dot">.</span></h1>
+      <p class="tagline">a weekly dispatch of music worth digging for</p>
+    </div>
+
+    <div class="meta-side right">
+      <span class="label">Sunday</span>
+      <span class="val">7 May 2026</span>
+    </div>
+
+  </header>
+
+  <!-- ═════ ISSUE OPENING ═════ -->
+  <section class="issue-open">
+    <span class="issue-eyebrow">— Issue —</span>
+    <div class="issue-display">04</div>
+    <p class="issue-date">A quieter week<span class="sep">·</span>four records<span class="sep">·</span>one withheld for Friday</p>
+  </section>
+
+  <!-- ═════ EDITOR'S NOTE ═════ -->
+  <section class="editors-note">
+    <div class="note-byline">From the editor</div>
+    <p class="note-text">Quieter week than last. Three of these came out of <strong>Boomkat</strong>'s Tuesday rotation, the Klein record from a single <em>Quietus</em> paragraph that wouldn't leave me alone, and the Yu Su from a Bandcamp tag-walk that started with your dub-techno annotations from March. The throughline this week, if there is one, is patience — none of these records show their hand on a first listen, which is partly why they made the cut.</p>
+    <p class="note-signature">— C.</p>
+  </section>
+
+  <!-- ═════ LEAD ═════ -->
+  <div class="sec-header">
+    <span class="num">01</span>
+    <h2>The <span class="acc">lead</span> record</h2>
+    <span class="meta"><span class="acc">via Boomkat</span>4 May 2026</span>
+  </div>
+
+  <article class="lead" id="track-01">
+
+    <div class="lead-cover-block">
+      <span class="lead-num-tag">01</span>
+      <div class="lead-cover">
+        <!-- HYPERDUB-STYLE: stark typographic, halftone texture, 2-color riso -->
+        <svg viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <!-- Halftone dot pattern for riso authenticity -->
+            <pattern id="halftone-dark" x="0" y="0" width="6" height="6" patternUnits="userSpaceOnUse">
+              <circle cx="3" cy="3" r="0.7" fill="#EFE4CC" opacity="0.06"/>
+            </pattern>
+            <pattern id="halftone-coral" x="0" y="0" width="5" height="5" patternUnits="userSpaceOnUse">
+              <circle cx="2.5" cy="2.5" r="0.6" fill="#C8412B" opacity="0.5"/>
+            </pattern>
+          </defs>
+
+          <!-- Background -->
+          <rect width="800" height="500" fill="#15191D"/>
+          <rect width="800" height="500" fill="url(#halftone-dark)"/>
+
+          <!-- Coral riso wash on right side (halftone) -->
+          <rect x="380" y="0" width="420" height="500" fill="url(#halftone-coral)" opacity="0.95"/>
+
+          <!-- Subtle horizon line -->
+          <line x1="40" y1="380" x2="760" y2="380" stroke="#EFE4CC" stroke-width="0.4" opacity="0.3"/>
+
+          <!-- Big typography (left side, on dark) -->
+          <text x="40" y="160" font-family="Instrument Serif" font-style="italic" font-size="84" font-weight="400" fill="#EFE4CC" letter-spacing="-3">Loraine</text>
+          <text x="40" y="240" font-family="Instrument Serif" font-style="italic" font-size="84" font-weight="400" fill="#EFE4CC" letter-spacing="-3">James</text>
+
+          <!-- Title at bottom (still on dark side mostly) -->
+          <text x="40" y="450" font-family="DM Mono" font-size="13" fill="#D29826" letter-spacing="6" font-weight="500">— GLITCH THE SYSTEM —</text>
+
+          <!-- Right side: small typographic detail with riso offset -->
+          <g transform="translate(580 160)" style="mix-blend-mode: multiply;">
+            <text x="0" y="0" font-family="Instrument Serif" font-style="italic" font-size="56" font-weight="400" fill="#15191D" letter-spacing="-2" opacity="0.85">12″</text>
+            <text x="0" y="44" font-family="Instrument Serif" font-style="italic" font-size="34" font-weight="400" fill="#15191D" opacity="0.75">EP</text>
+          </g>
+
+          <!-- Riso offset shadow of the same -->
+          <g transform="translate(582 159)" style="mix-blend-mode: multiply;">
+            <text x="0" y="0" font-family="Instrument Serif" font-style="italic" font-size="56" font-weight="400" fill="#15191D" letter-spacing="-2" opacity="0.4">12″</text>
+            <text x="0" y="44" font-family="Instrument Serif" font-style="italic" font-size="34" font-weight="400" fill="#15191D" opacity="0.4">EP</text>
+          </g>
+
+          <!-- Catalog details bottom right -->
+          <text x="760" y="450" text-anchor="end" font-family="DM Mono" font-size="11" fill="#15191D" letter-spacing="3" font-weight="500" opacity="0.85">HDB-098 · 2026</text>
+
+          <!-- Hyperdub mark top right -->
+          <g transform="translate(760 50)">
+            <text x="0" y="0" text-anchor="end" font-family="DM Mono" font-size="11" fill="#15191D" letter-spacing="4" font-weight="500" opacity="0.85">▲ HYPERDUB</text>
+          </g>
+
+          <!-- Small fragments / dots -->
+          <g opacity="0.6">
+            <circle cx="120" cy="380" r="1.2" fill="#D29826"/>
+            <circle cx="280" cy="100" r="1" fill="#EFE4CC" opacity="0.5"/>
+            <circle cx="200" cy="320" r="0.8" fill="#EFE4CC" opacity="0.4"/>
+          </g>
+        </svg>
+      </div>
+
+      <div class="lead-cover-meta">
+        <span class="left">Hyperdub · HDB-098</span>
+        <span class="center">— 12″ EP · A1 —</span>
+        <span class="right">Released 30 Apr 2026</span>
+      </div>
+    </div>
+
+    <div class="lead-body">
+
+      <aside class="lead-meta-col">
+        <span class="source-tag">via Boomkat</span>
+        <span class="label">Artist</span>
+        <span class="val bigger">Loraine James</span>
+        <span class="label">Label</span>
+        <span class="val">Hyperdub</span>
+        <span class="label">Format</span>
+        <span class="val">12″ EP</span>
+        <span class="label">Genre</span>
+        <span class="val">Bedroom electronic, IDM-adjacent</span>
+        <span class="label">Surfaced</span>
+        <span class="val">Tuesday, 4 May</span>
+      </aside>
+
+      <div class="lead-text-col">
+        <p class="kicker">— The lead record · Issue 04 —</p>
+
+        <!-- Signal block: lead pick category + match score -->
+        <div class="signal-block lead">
+          <span class="signal-badge">★ Lead pick</span>
+          <span class="signal-meta">
+            <strong>92%</strong> match <span class="dim">·</span> <strong>11/11</strong> sources flagged <span class="dim">·</span> agent confidence <strong>high</strong>
+          </span>
+        </div>
+
+        <h2 class="lead-title">Glitch the System</h2>
+
+        <p class="lead-dek">A bedroom-electronic record that finally lets the rhythm break the room.</p>
+
+        <p class="lead-prose">Builds on the bedroom-electronic vulnerability of <em>Building Something Beautiful For Me</em> but pushes harder into rhythmic abstraction. Cut-up vocals collapse into half-formed phrases, kick drums arrive late and leave early, and the whole thing has the quality of being half-remembered — a record that sounds like it&rsquo;s already part of your past on first listen.</p>
+
+        <div class="pullquote">
+          <q>this is where that lineage is right now</q>
+        </div>
+
+        <p class="lead-prose">You flagged <strong>Hyperdub-adjacent</strong> stuff in your seed back in February — Burial, Ikonika, the <em>Hardcore Continuum</em> reissues. James has been the most interesting artist on that label for three records running, and this one is the first where the song-craft and the texture finally pull in the same direction. Recommended loud, on headphones, walking somewhere.</p>
+
+        <!-- Matched signals: show the model's actual reasoning -->
+        <div class="matched-signals">
+          <span class="ms-label">— Why this matched you —</span>
+          <div class="ms-items">
+            <span class="ms-tag boosted">Hyperdub seed <span class="weight">· 1.0</span></span>
+            <span class="ms-tag boosted">Burial annotations <span class="weight">· Mar</span></span>
+            <span class="ms-tag boosted">IDM-adjacent tag <span class="weight">· 0.8</span></span>
+            <span class="ms-tag">Source: Boomkat <span class="weight">· 1.0</span></span>
+            <span class="ms-tag">Hardcore Continuum thread <span class="weight">· Feb</span></span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <a href="#" class="listen"><span class="arrow">▸</span> Listen on Bandcamp</a>
+          <div class="feedback">
+            <button class="fb hit">+ Hit</button>
+            <button class="fb miss">— Miss</button>
+            <button class="fb more">↗ More like this</button>
+          </div>
+          <a href="#" class="archive-link">↗ Archive</a>
+        </div>
+      </div>
+
+    </div>
+  </article>
+
+  <!-- ═════ INSIDE THE ISSUE ═════ -->
+  <div class="sec-header">
+    <span class="num">02</span>
+    <h2>Inside the <span class="acc">issue</span></h2>
+    <span class="meta"><span class="acc">three records</span>+ one withheld</span>
+  </div>
+
+  <section class="inside">
+
+    <!-- TRACK 02 -->
+    <article class="inside-track" id="track-02">
+
+      <div class="cover-block">
+        <span class="it-num-tag">02</span>
+        <div class="it-cover">
+          <!-- MFM-STYLE: dreamy landscape with halftone -->
+          <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="mfm-sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#F4D9A8"/>
+                <stop offset="0.55" stop-color="#D29826"/>
+                <stop offset="1" stop-color="#93311F"/>
+              </linearGradient>
+              <pattern id="halftone-mfm" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+                <circle cx="2" cy="2" r="0.5" fill="#15191D" opacity="0.08"/>
+              </pattern>
+            </defs>
+
+            <rect width="400" height="400" fill="url(#mfm-sky)"/>
+            <rect width="400" height="400" fill="url(#halftone-mfm)"/>
+
+            <!-- Sun -->
+            <g style="mix-blend-mode: multiply;" transform="translate(2 1)" opacity="0.55">
+              <circle cx="200" cy="220" r="58" fill="#C8412B"/>
+            </g>
+            <circle cx="200" cy="220" r="56" fill="#EFE4CC" opacity="0.92"/>
+
+            <!-- Distant mountains layered -->
+            <path d="M 0 270 L 60 200 L 110 240 L 170 180 L 230 250 L 290 200 L 360 245 L 400 230 L 400 400 L 0 400 Z" fill="#1E4543" opacity="0.92"/>
+
+            <!-- Riso cyan offset -->
+            <g style="mix-blend-mode: multiply;" transform="translate(3 -2)" opacity="0.4">
+              <path d="M 0 270 L 60 200 L 110 240 L 170 180 L 230 250 L 290 200 L 360 245 L 400 230 L 400 400 L 0 400 Z" fill="#C8412B"/>
+            </g>
+
+            <!-- Reflection / water -->
+            <line x1="0" y1="290" x2="400" y2="290" stroke="#EFE4CC" stroke-width="0.6" opacity="0.7"/>
+
+            <!-- Reflection ripples -->
+            <ellipse cx="200" cy="320" rx="14" ry="3" fill="#EFE4CC" opacity="0.45"/>
+            <ellipse cx="200" cy="340" rx="22" ry="2.5" fill="#EFE4CC" opacity="0.32"/>
+            <ellipse cx="200" cy="360" rx="32" ry="2" fill="#EFE4CC" opacity="0.22"/>
+            <ellipse cx="200" cy="378" rx="46" ry="1.5" fill="#EFE4CC" opacity="0.14"/>
+
+            <!-- Title -->
+            <text x="32" y="56" font-family="Instrument Serif" font-style="italic" font-size="34" fill="#15191D" letter-spacing="-1">Melaleuca</text>
+            <text x="32" y="78" font-family="DM Mono" font-size="10" fill="#15191D" letter-spacing="3.5" opacity="0.75">— YU SU —</text>
+
+            <!-- Catalog -->
+            <text x="368" y="386" text-anchor="end" font-family="DM Mono" font-size="9" fill="#EFE4CC" letter-spacing="2.5" opacity="0.85">MFM-072 · 2026</text>
+          </svg>
+        </div>
+        <div class="it-cover-meta">
+          <span><span class="label-name">Music From Memory</span> · MFM-072</span>
+          <span>2026 · LP</span>
+        </div>
+      </div>
+
+      <div class="text-block">
+        <div class="signal-block steady">
+          <span class="signal-badge">◆ Steady pick</span>
+          <span class="signal-meta">
+            <strong>78%</strong> match <span class="dim">·</span> 1 source <span class="dim">·</span> in pocket with <strong>dub-techno</strong> cluster
+          </span>
+        </div>
+        <span class="it-source">via Aquarium Drunkard · 2 May</span>
+        <p class="it-artist">Yu Su</p>
+        <h3 class="it-title">Melaleuca</h3>
+        <p class="it-prose">If the Tim Hecker entry on your seed was your way of asking for ambient that still has <em>bones</em>, this is it. Dub-inflected, patient, the percussion sits low in the mix like a heartbeat through a wall. Music for the <strong>second cup of coffee</strong>, not the first.</p>
+        <div class="matched-signals">
+          <span class="ms-label">— Why this matched you —</span>
+          <div class="ms-items">
+            <span class="ms-tag boosted">Dub-techno tag <span class="weight">· 0.9</span></span>
+            <span class="ms-tag boosted">Tim Hecker seed <span class="weight">· Jan</span></span>
+            <span class="ms-tag">"ambient with bones" annotation <span class="weight">· Mar</span></span>
+            <span class="ms-tag">Source: Aquarium D. <span class="weight">· 0.7</span></span>
+          </div>
+        </div>
+        <div class="actions">
+          <a href="#" class="listen"><span class="arrow">▸</span> Listen</a>
+          <div class="feedback">
+            <button class="fb hit">+ Hit</button>
+            <button class="fb miss">— Miss</button>
+            <button class="fb more">↗ More</button>
+          </div>
+          <a href="#" class="archive-link">↗ Archive</a>
+        </div>
+      </div>
+
+    </article>
+
+    <!-- TRACK 03 -->
+    <article class="inside-track flip" id="track-03">
+
+      <div class="cover-block">
+        <span class="it-num-tag">03</span>
+        <div class="it-cover">
+          <!-- AD93-STYLE: bold geometric with halftone -->
+          <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="halftone-ad" x="0" y="0" width="5" height="5" patternUnits="userSpaceOnUse">
+                <circle cx="2.5" cy="2.5" r="0.5" fill="#15191D" opacity="0.06"/>
+              </pattern>
+            </defs>
+
+            <rect width="400" height="400" fill="#EFE4CC"/>
+            <rect width="400" height="400" fill="url(#halftone-ad)"/>
+
+            <!-- Mountain triangles, layered -->
+            <polygon points="0,320 100,140 220,320" fill="#15191D"/>
+            <polygon points="140,320 240,90 350,320" fill="#93311F"/>
+            <polygon points="280,320 350,200 400,320" fill="#15191D" opacity="0.65"/>
+
+            <!-- Riso magenta offset -->
+            <g style="mix-blend-mode: multiply;" transform="translate(3 -2)" opacity="0.42">
+              <polygon points="0,320 100,140 220,320" fill="#C8412B"/>
+              <polygon points="140,320 240,90 350,320" fill="#D29826"/>
+            </g>
+
+            <line x1="0" y1="320" x2="400" y2="320" stroke="#15191D" stroke-width="2"/>
+
+            <!-- Sun -->
+            <circle cx="310" cy="92" r="22" fill="none" stroke="#15191D" stroke-width="2"/>
+            <g transform="translate(2 -1)" style="mix-blend-mode: multiply;" opacity="0.55">
+              <circle cx="310" cy="92" r="22" fill="none" stroke="#C8412B" stroke-width="1.5"/>
+            </g>
+
+            <!-- Title -->
+            <text x="32" y="56" font-family="Instrument Serif" font-style="italic" font-size="36" font-weight="400" fill="#15191D" letter-spacing="-1">resort to</text>
+            <text x="32" y="96" font-family="Instrument Serif" font-style="italic" font-size="36" font-weight="400" fill="#15191D" letter-spacing="-1">mountains</text>
+
+            <!-- Bottom -->
+            <text x="32" y="376" font-family="DM Mono" font-size="9" fill="#15191D" letter-spacing="3" font-weight="500">UPSAMMY</text>
+            <text x="368" y="376" text-anchor="end" font-family="DM Mono" font-size="9" fill="#15191D" letter-spacing="3" font-weight="500">AD93 · WHYT-114</text>
+
+            <!-- Star ornament -->
+            <text x="195" y="220" font-family="Instrument Serif" font-style="italic" font-size="32" fill="#D29826">✦</text>
+          </svg>
+        </div>
+        <div class="it-cover-meta">
+          <span><span class="label-name">AD 93</span> · WHYT-114</span>
+          <span>2026 · LP</span>
+        </div>
+      </div>
+
+      <div class="text-block">
+        <div class="signal-block steady">
+          <span class="signal-badge">◆ Steady pick</span>
+          <span class="signal-meta">
+            <strong>74%</strong> match <span class="dim">·</span> 2 sources <span class="dim">·</span> kosmische adjacency from <strong>Caterina Barbieri</strong>
+          </span>
+        </div>
+        <span class="it-source">via Resident Advisor · 5 May</span>
+        <p class="it-artist">upsammy</p>
+        <h3 class="it-title">Resort to Mountains</h3>
+        <p class="it-prose">Dutch producer who came up through Nous&rsquo;klaer; this new one for <strong>AD 93</strong> abandons the kosmische steady-state for something more ruptured. The arpeggios are still there, but they&rsquo;re being interrupted now. Recommended if you&rsquo;ve been wanting Caterina Barbieri but with more <em>weather</em>.</p>
+        <div class="matched-signals">
+          <span class="ms-label">— Why this matched you —</span>
+          <div class="ms-items">
+            <span class="ms-tag boosted">Caterina Barbieri seed <span class="weight">· Feb</span></span>
+            <span class="ms-tag">Kosmische tag <span class="weight">· 0.6</span></span>
+            <span class="ms-tag stretch">AD93 label · new exposure</span>
+            <span class="ms-tag">Source: Resident Advisor <span class="weight">· 0.8</span></span>
+          </div>
+        </div>
+        <div class="actions">
+          <a href="#" class="listen"><span class="arrow">▸</span> Listen</a>
+          <div class="feedback">
+            <button class="fb hit">+ Hit</button>
+            <button class="fb miss">— Miss</button>
+            <button class="fb more">↗ More</button>
+          </div>
+          <a href="#" class="archive-link">↗ Archive</a>
+        </div>
+      </div>
+
+    </article>
+
+    <!-- TRACK 04 -->
+    <article class="inside-track" id="track-04">
+
+      <div class="cover-block">
+        <span class="it-num-tag">04</span>
+        <div class="it-cover">
+          <!-- IKONIKA-STYLE: type-driven, split graphic -->
+          <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="halftone-ikon" x="0" y="0" width="5" height="5" patternUnits="userSpaceOnUse">
+                <circle cx="2.5" cy="2.5" r="0.55" fill="#15191D" opacity="0.06"/>
+              </pattern>
+              <pattern id="halftone-ikon-light" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+                <circle cx="2" cy="2" r="0.4" fill="#EFE4CC" opacity="0.12"/>
+              </pattern>
+            </defs>
+
+            <rect width="400" height="400" fill="#EFE4CC"/>
+            <rect width="400" height="400" fill="url(#halftone-ikon)"/>
+
+            <!-- Coral block top -->
+            <rect x="0" y="0" width="400" height="200" fill="#93311F"/>
+            <rect x="0" y="0" width="400" height="200" fill="url(#halftone-ikon-light)"/>
+
+            <!-- Riso teal offset on red block -->
+            <g style="mix-blend-mode: multiply;" transform="translate(3 -2)" opacity="0.35">
+              <rect x="0" y="0" width="400" height="200" fill="#1E4543"/>
+            </g>
+
+            <!-- Title -->
+            <text x="200" y="115" text-anchor="middle" font-family="Instrument Serif" font-style="italic" font-size="76" font-weight="400" fill="#EFE4CC" letter-spacing="-3">Whether</text>
+            <text x="200" y="148" text-anchor="middle" font-family="DM Mono" font-size="10" fill="#EFE4CC" letter-spacing="6.5" opacity="0.85">— A RECORD BY KLEIN —</text>
+
+            <!-- Cross/plus ornament center bottom -->
+            <g transform="translate(200 280)">
+              <line x1="-22" y1="0" x2="22" y2="0" stroke="#15191D" stroke-width="1.4"/>
+              <line x1="0" y1="-22" x2="0" y2="22" stroke="#15191D" stroke-width="1.4"/>
+              <circle cx="0" cy="0" r="4" fill="#93311F"/>
+              <g transform="translate(2 -1)" style="mix-blend-mode: multiply;" opacity="0.5">
+                <line x1="-22" y1="0" x2="22" y2="0" stroke="#D29826" stroke-width="1.2"/>
+                <line x1="0" y1="-22" x2="0" y2="22" stroke="#D29826" stroke-width="1.2"/>
+              </g>
+            </g>
+
+            <!-- Bottom catalog -->
+            <text x="200" y="370" text-anchor="middle" font-family="DM Mono" font-size="9" fill="#15191D" letter-spacing="3" font-weight="500">IKONIKA · IKON-022 · 2026</text>
+          </svg>
+        </div>
+        <div class="it-cover-meta">
+          <span><span class="label-name">Ikonika</span> · IKON-022</span>
+          <span>2026 · 12″</span>
+        </div>
+      </div>
+
+      <div class="text-block">
+        <div class="signal-block stretch">
+          <span class="signal-badge">⌁ Stretch pick</span>
+          <span class="signal-meta">
+            <strong>61%</strong> match <span class="dim">·</span> previously skipped twice <span class="dim">·</span> <strong>chance taken</strong>
+          </span>
+        </div>
+        <span class="it-source">via The Quietus · 6 May</span>
+        <p class="it-artist">Klein</p>
+        <h3 class="it-title">Whether</h3>
+        <p class="it-prose">Vocal collage and broken Logic plugins; Klein&rsquo;s been doing this for years but this one finally has the song-craft to match the texture. <strong>Track 3 is the one</strong> — the chord changes pull from gospel and then refuse to land. If <em>&ldquo;pulls from gospel and then refuses to land&rdquo;</em> isn&rsquo;t your phrase yet, it will be.</p>
+        <div class="matched-signals">
+          <span class="ms-label">— Why this matched you (despite the stretch) —</span>
+          <div class="ms-items">
+            <span class="ms-tag">Vocal collage seed <span class="weight">· Mar</span></span>
+            <span class="ms-tag stretch">Klein · 2 prior skips overridden</span>
+            <span class="ms-tag boosted">Quietus longread <span class="weight">· 1.0</span></span>
+            <span class="ms-tag">Source: The Quietus <span class="weight">· 1.0</span></span>
+          </div>
+        </div>
+        <div class="actions">
+          <a href="#" class="listen"><span class="arrow">▸</span> Listen</a>
+          <div class="feedback">
+            <button class="fb hit">+ Hit</button>
+            <button class="fb miss">— Miss</button>
+            <button class="fb more">↗ More</button>
+          </div>
+          <a href="#" class="archive-link">↗ Archive</a>
+        </div>
+      </div>
+
+    </article>
+
+  </section>
+
+  <!-- ═════ WITHHELD ═════ -->
+  <section class="withheld" id="track-05">
+    <div class="wh-seal">
+      <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="halftone-seal" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="0.5" fill="#15191D" opacity="0.08"/>
+          </pattern>
+        </defs>
+        <!-- Outer ring -->
+        <circle cx="100" cy="100" r="95" fill="#EFE4CC" stroke="#C8412B" stroke-width="2.5"/>
+        <circle cx="100" cy="100" r="95" fill="url(#halftone-seal)"/>
+        <circle cx="100" cy="100" r="86" fill="none" stroke="#C8412B" stroke-width="0.6" stroke-dasharray="2 3"/>
+
+        <!-- Curved text top -->
+        <path id="topcurve" d="M 30 100 A 70 70 0 0 1 170 100" fill="none"/>
+        <text font-family="DM Mono" font-size="10" fill="#C8412B" letter-spacing="5" font-weight="500">
+          <textPath href="#topcurve" startOffset="50%" text-anchor="middle">★ HELD BACK ★</textPath>
+        </text>
+
+        <!-- Center -->
+        <text x="100" y="98" text-anchor="middle" font-family="Instrument Serif" font-style="italic" font-size="38" fill="#15191D" letter-spacing="-1">surprise</text>
+        <text x="100" y="120" text-anchor="middle" font-family="DM Mono" font-size="9" fill="#15191D" letter-spacing="3.5" font-weight="500">DROPS FRIDAY</text>
+
+        <!-- Bottom curve -->
+        <path id="botcurve" d="M 30 110 A 70 70 0 0 0 170 110" fill="none"/>
+        <text font-family="DM Mono" font-size="8" fill="#1E4543" letter-spacing="3.5" font-weight="500">
+          <textPath href="#botcurve" startOffset="50%" text-anchor="middle">— ISSUE 04 · 13 MAY 2026 —</textPath>
+        </text>
+
+        <!-- Riso offset -->
+        <g style="mix-blend-mode: multiply;" transform="translate(2 -1)" opacity="0.5">
+          <circle cx="100" cy="100" r="95" fill="none" stroke="#1E4543" stroke-width="1.5"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="wh-text">
+      <p class="label">— A fifth record, withheld —</p>
+      <h3>Drops Friday by email</h3>
+      <p>The agent has flagged a fifth record for the week but isn&rsquo;t ready to commit publicly. Lean toward an experimental electronic release; <em>that&rsquo;s all the editor will say</em>. Subscribers get the midweek email.</p>
+    </div>
+
+    <a href="#" class="wh-cta"><span class="arrow">⌁</span> Subscribe</a>
+  </section>
+
+  <!-- ═════ NOW DIGGING ═════
+       Quiet ambient widget — the agent's continuous activity
+       made visible on the reading surface. -->
+  <div class="now-digging">
+    <span class="nd-dot"></span>
+    <span class="nd-label">Now</span>
+    <span class="nd-text">The agent is reading <strong>Boomkat</strong>'s new releases for <strong>Issue 05</strong>. Friday's surprise drop is being scored.</span>
+    <span class="nd-time">2m ago</span>
+  </div>
+
+  <!-- ═════ BACK MATTER ═════ -->
+  <div class="back-matter">
+
+    <div class="next-issue">
+      <p class="next-label">— Next Sunday · Issue 05 —</p>
+      <p class="next-text">watches the <strong>Editions Mego</strong> reissue cycle, and a slow build toward the <strong>Berlin Atonal</strong> preview season.</p>
+    </div>
+
+    <div class="colophon">
+      <div class="colo-block">
+        <h4>Sources, this issue</h4>
+        <ul>
+          <li>Boomkat <em>(weekly rotation)</em></li>
+          <li>The Quietus <em>(longreads)</em></li>
+          <li>Aquarium Drunkard</li>
+          <li>Resident Advisor</li>
+          <li>Bandcamp Daily</li>
+          <li>+ 6 others, monitored</li>
+        </ul>
+      </div>
+      <div class="colo-block">
+        <h4>Set in</h4>
+        <p><em>Instrument Serif</em> (display)<br>Spectral (body)<br>DM Mono (accent)<br>Caveat (signature)</p>
+        <p style="margin-top: 14px; font-size: 12.5px; color: var(--ink-faint);">Curated against your taste model. Edited by an agent. Annotated by you.</p>
+      </div>
+      <div class="colo-block">
+        <h4>This week's loop</h4>
+        <p><em>Hit/miss feedback from issue 03 raised confidence on dub-techno picks by 18%.</em> Three tags promoted from candidate to anchor.</p>
+        <p style="margin-top: 12px;">Sources weighted 60/40 (text bias / source reputation).</p>
+      </div>
+    </div>
+
+    <div class="archive-row">
+      <a href="#">← Issue 03</a>
+      <a href="#">Browse the archive</a>
+      <a href="#">Adjust your taste</a>
+      <a href="#">Subscribe by email</a>
+    </div>
+
+    <div class="signoff-block">
+      <p class="signoff">until next Sunday <span class="heart">♥</span></p>
+      <p class="footer-mark">Crate Digger <span class="pip">·</span> Issue 04 <span class="pip">·</span> Vol. 1 <span class="pip">·</span> mmxxvi</p>
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>

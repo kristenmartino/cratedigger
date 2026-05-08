@@ -4,4 +4,4 @@ Shared TypeScript types backed by zod runtime schemas. Used by `apps/web` (valid
 
 ## Sync rule
 
-When you change a type here, update the matching Pydantic model in `services/api/app/models.py`. There's no codegen — discipline-driven sync (see `cratedigger-handoff/CLAUDE.md` "Conventions").
+When you change a type here, update the matching Pydantic model in `services/api/app/models.py`. There's no codegen — discipline-driven sync (see `docs/CLAUDE.md` "Conventions").

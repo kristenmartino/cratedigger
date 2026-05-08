@@ -1,7 +1,7 @@
 /**
  * `/archive` — the archive / tool surface.
  *
- * Pixel-level reference: cratedigger-handoff/mockups/cratedigger-archive.html
+ * Pixel-level reference: docs/mockups/cratedigger-archive.html
  *
  * Window-chromed, sidebar + records grid + status bar. Stub for now; full
  * layout lands Sprint Week 5.

@@ -5,7 +5,7 @@ same ingestion pipeline a real onboarding flow will use — `build_profile_from_
 in `agent.ingestion.seed_profile`. NO hardcoded INSERT INTO taste_profiles.
 
 Issue 04 is populated with the full content from
-cratedigger-handoff/mockups/cratedigger-newsletter.html (extracted to
+docs/mockups/cratedigger-newsletter.html (extracted to
 data/issue_04_fixture.json). Issues 01-03 get placeholder titles only;
 fill in later if needed for a fuller archive demo.
 

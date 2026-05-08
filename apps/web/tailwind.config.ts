@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 /**
- * Crate Digger design tokens. Sourced from cratedigger-handoff/DESIGN_SYSTEM.md.
+ * Crate Digger design tokens. Sourced from docs/DESIGN_SYSTEM.md.
  * The mockups (cratedigger-newsletter.html, cratedigger-archive.html) are the
  * pixel-level source of truth; this config encodes their tokens for component
  * use.

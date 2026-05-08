@@ -1,13 +1,13 @@
 /**
  * `/issue/[number]` — the editorial digest surface.
  *
- * Pixel-level reference: cratedigger-handoff/mockups/cratedigger-newsletter.html
- * Tokens: cratedigger-handoff/DESIGN_SYSTEM.md
+ * Pixel-level reference: docs/mockups/cratedigger-newsletter.html
+ * Tokens: docs/DESIGN_SYSTEM.md
  *
  * This is a stub that fetches the issue and renders a minimal version. The
  * full layout (system-strip, masthead, signal-blocks, matched-signals,
  * pull-quote, sticky track-nav, now-digging widget, withheld seal) lands in
- * Sprint Week 5 per cratedigger-handoff/SPRINT_PLAN.md.
+ * Sprint Week 5 per docs/SPRINT_PLAN.md.
  *
  * Server Component (RSC). Reads from the DB directly via @cratedigger/db.
  */

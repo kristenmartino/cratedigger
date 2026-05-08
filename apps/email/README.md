@@ -17,4 +17,4 @@ const { html, errors } = renderIssue(issue);
 
 ## Status
 
-Stub. Full editorial layout lands Sprint Week 6 per `cratedigger-handoff/SPRINT_PLAN.md`.
+Stub. Full editorial layout lands Sprint Week 6 per `docs/SPRINT_PLAN.md`.
