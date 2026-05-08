@@ -161,7 +161,7 @@ async def seed_issue_04(pool, user_id: str) -> None:
             normalize(rel["title"]),
             rel.get("label"),
             rel.get("catalog_number"),
-            rel.get("release_date"),
+            date.fromisoformat(rel["release_date"]) if rel.get("release_date") else None,
             rel.get("url"),
             rel.get("bandcamp_url"),
             [rec["source_attr"]],
@@ -267,10 +267,10 @@ async def seed_placeholder_issues(pool, user_id: str) -> None:
             """
             INSERT INTO issues (user_id, issue_number, volume, publish_date,
                                 status, title, editor_note, sources_used)
-            VALUES ($1::uuid, $2, 1, $3::date, 'published', $4, $5, '{}'::jsonb)
+            VALUES ($1::uuid, $2, 1, $3, 'published', $4, $5, '{}'::jsonb)
             ON CONFLICT (user_id, issue_number) DO NOTHING
             """,
-            user_id, num, pubd, title, note,
+            user_id, num, date.fromisoformat(pubd), title, note,
         )
     logger.info("Seeded 3 placeholder issues (01–03)")
 

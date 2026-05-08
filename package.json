@@ -16,10 +16,10 @@
     "db:psql": "docker compose exec db psql -U cratedigger -d cratediggerdb",
     "db:push": "pnpm --filter @cratedigger/db push",
     "db:studio": "pnpm --filter @cratedigger/db studio",
-    "seed": "cd services/agent && python scripts/seed.py",
-    "seed:reset": "cd services/agent && python scripts/seed.py --reset",
-    "api:dev": "cd services/api && uvicorn app.main:app --reload --port 8000",
-    "agent:run-issue": "cd services/agent && python scripts/run_issue.py"
+    "seed": "cd services/agent && .venv/bin/python scripts/seed.py",
+    "seed:reset": "cd services/agent && .venv/bin/python scripts/seed.py --reset",
+    "api:dev": "cd services/api && .venv/bin/uvicorn app.main:app --reload --port 8000",
+    "agent:run-issue": "cd services/agent && .venv/bin/python scripts/run_issue.py"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

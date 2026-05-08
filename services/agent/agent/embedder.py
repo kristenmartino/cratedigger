@@ -32,6 +32,14 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
 
+    # Early return if Voyage isn't configured — emit zero-vectors so callers
+    # (seed script, embed_releases workflow node) keep running. The voyageai
+    # Client constructor raises on missing key, before our try/except can
+    # catch it.
+    if not settings.voyage_api_key:
+        logger.warning("VOYAGE_API_KEY not set; returning zero-vector fallback for %d texts", len(texts))
+        return [[0.0] * DIM for _ in texts]
+
     client = voyageai.Client(api_key=settings.voyage_api_key)
     all_embeddings: list[list[float]] = []
 
@@ -58,6 +66,10 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
 async def embed_query(text: str) -> list[float]:
     """Single-text embedding for query-time scoring (e.g. taste centroid construction)."""
     if not text:
+        return [0.0] * DIM
+
+    if not settings.voyage_api_key:
+        logger.warning("VOYAGE_API_KEY not set; returning zero-vector for query")
         return [0.0] * DIM
 
     client = voyageai.Client(api_key=settings.voyage_api_key)
