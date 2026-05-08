@@ -1,0 +1,44 @@
+# dependencies
+node_modules/
+.pnpm-store/
+.pnp.*
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# build output
+.next/
+out/
+build/
+dist/
+.swc/
+*.tsbuildinfo
+
+# env files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local DB volumes
+pgdata/
+
+# coverage
+coverage/
+
+# vercel / railway
+.vercel/
+.next-env.d.ts

@@ -1,0 +1,41 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck packages/shared
+        run: pnpm --filter @cratedigger/shared typecheck
+
+      - name: Typecheck packages/db
+        run: pnpm --filter @cratedigger/db typecheck
+
+      - name: Typecheck apps/web
+        run: pnpm --filter @cratedigger/web typecheck
+
+      - name: Build apps/web
+        run: pnpm --filter @cratedigger/web build
+        env:
+          # Build needs *some* value for these even though they're not used at compile time.
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy
+          CLERK_SECRET_KEY: sk_test_dummy
+          DATABASE_URL: postgresql://cratedigger:cratedigger@localhost:5432/cratediggerdb

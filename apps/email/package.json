@@ -1,0 +1,23 @@
+{
+  "name": "@cratedigger/email",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/render.ts",
+  "types": "./src/render.ts",
+  "scripts": {
+    "build": "tsc",
+    "preview": "tsx src/preview.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cratedigger/shared": "workspace:*",
+    "mjml": "^4.15.3",
+    "resend": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/mjml": "^4.7.4",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

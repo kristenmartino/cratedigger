@@ -1,0 +1,133 @@
+{
+  "issue_number": 4,
+  "volume": 1,
+  "publish_date": "2026-05-07",
+  "title": "A quieter week",
+  "editor_note": "Quieter week than last. Three of these came out of **Boomkat**'s Tuesday rotation, the Klein record from a single *Quietus* paragraph that wouldn't leave me alone, and the Yu Su from a Bandcamp tag-walk that started with your dub-techno annotations from March. The throughline this week, if there is one, is *patience* — none of these records show their hand on a first listen, which is partly why they made the cut.",
+  "sources_used": {
+    "boomkat": 8,
+    "quietus": 4,
+    "aquarium-drunkard": 3,
+    "resident-advisor": 2,
+    "bandcamp-daily": 2
+  },
+  "recommendations": [
+    {
+      "position": 1,
+      "category": "lead",
+      "match_score": 0.92,
+      "confidence": "high",
+      "source_attr": "boomkat",
+      "release": {
+        "title": "Glitch the System",
+        "artist": "Loraine James",
+        "label": "Hyperdub",
+        "catalog_number": "HDB-098",
+        "release_date": "2026-04-30",
+        "url": "https://hyperdub.bandcamp.com/album/glitch-the-system",
+        "bandcamp_url": "https://hyperdub.bandcamp.com/album/glitch-the-system"
+      },
+      "prose": "Builds on the bedroom-electronic vulnerability of *Building Something Beautiful For Me* but pushes harder into rhythmic abstraction. Cut-up vocals collapse into half-formed phrases, kick drums arrive late and leave early, and the whole thing has the quality of being half-remembered — a record that sounds like it's already part of your past on first listen.\n\nYou flagged **Hyperdub-adjacent** stuff in your seed back in February — Burial, Ikonika, the *Hardcore Continuum* reissues. James has been the most interesting artist on that label for three records running, and this one is the first where the song-craft and the texture finally pull in the same direction. Recommended loud, on headphones, walking somewhere.",
+      "pull_quote": "this is where that lineage is right now",
+      "matched_signals": [
+        { "label": "Hyperdub seed", "weight": 1.0, "variant": "boosted" },
+        { "label": "Burial annotations", "weight": "Mar", "variant": "boosted" },
+        { "label": "IDM-adjacent tag", "weight": 0.8, "variant": "boosted" },
+        { "label": "Source: Boomkat", "weight": 1.0, "variant": "neutral" },
+        { "label": "Hardcore Continuum thread", "weight": "Feb", "variant": "neutral" }
+      ]
+    },
+    {
+      "position": 2,
+      "category": "steady",
+      "match_score": 0.78,
+      "confidence": "high",
+      "source_attr": "aquarium-drunkard",
+      "release": {
+        "title": "Melaleuca",
+        "artist": "Yu Su",
+        "label": "Music From Memory",
+        "catalog_number": "MFM-072",
+        "release_date": "2026-05-02",
+        "url": null,
+        "bandcamp_url": null
+      },
+      "prose": "If the Tim Hecker entry on your seed was your way of asking for ambient that still has *bones*, this is it. Dub-inflected, patient, the percussion sits low in the mix like a heartbeat through a wall. Music for the **second cup of coffee**, not the first.",
+      "pull_quote": null,
+      "matched_signals": [
+        { "label": "Dub-techno tag", "weight": 0.9, "variant": "boosted" },
+        { "label": "Tim Hecker seed", "weight": "Jan", "variant": "boosted" },
+        { "label": "\"ambient with bones\" annotation", "weight": "Mar", "variant": "neutral" },
+        { "label": "Source: Aquarium D.", "weight": 0.7, "variant": "neutral" }
+      ]
+    },
+    {
+      "position": 3,
+      "category": "steady",
+      "match_score": 0.74,
+      "confidence": "medium",
+      "source_attr": "resident-advisor",
+      "release": {
+        "title": "Resort to Mountains",
+        "artist": "upsammy",
+        "label": "AD 93",
+        "catalog_number": "WHYT-114",
+        "release_date": "2026-05-05",
+        "url": null,
+        "bandcamp_url": null
+      },
+      "prose": "Dutch producer who came up through Nous'klaer; this new one for **AD 93** abandons the kosmische steady-state for something more ruptured. The arpeggios are still there, but they're being interrupted now. Recommended if you've been wanting Caterina Barbieri but with more *weather*.",
+      "pull_quote": null,
+      "matched_signals": [
+        { "label": "Caterina Barbieri seed", "weight": "Feb", "variant": "boosted" },
+        { "label": "Kosmische tag", "weight": 0.6, "variant": "neutral" },
+        { "label": "AD93 label · new exposure", "variant": "stretch" },
+        { "label": "Source: Resident Advisor", "weight": 0.8, "variant": "neutral" }
+      ]
+    },
+    {
+      "position": 4,
+      "category": "stretch",
+      "match_score": 0.61,
+      "confidence": "low",
+      "source_attr": "quietus",
+      "release": {
+        "title": "Whether",
+        "artist": "Klein",
+        "label": "Ikonika",
+        "catalog_number": "IKON-022",
+        "release_date": "2026-05-06",
+        "url": null,
+        "bandcamp_url": null
+      },
+      "prose": "Vocal collage and broken Logic plugins; Klein's been doing this for years but this one finally has the song-craft to match the texture. **Track 3 is the one** — the chord changes pull from gospel and then refuse to land. If *\"pulls from gospel and then refuses to land\"* isn't your phrase yet, it will be.",
+      "pull_quote": null,
+      "matched_signals": [
+        { "label": "Vocal collage seed", "weight": "Mar", "variant": "neutral" },
+        { "label": "Klein · 2 prior skips overridden", "variant": "stretch" },
+        { "label": "Quietus longread", "weight": 1.0, "variant": "boosted" },
+        { "label": "Source: The Quietus", "weight": 1.0, "variant": "neutral" }
+      ]
+    },
+    {
+      "position": 5,
+      "category": "withheld",
+      "match_score": 0.7,
+      "confidence": "medium",
+      "source_attr": "boomkat",
+      "release": {
+        "title": "(withheld)",
+        "artist": "(withheld)",
+        "label": null,
+        "catalog_number": null,
+        "release_date": null,
+        "url": null,
+        "bandcamp_url": null
+      },
+      "prose": "The agent has flagged a fifth record for the week but isn't ready to commit publicly. Lean toward an experimental electronic release; *that's all the editor will say*. Subscribers get the midweek email.",
+      "pull_quote": null,
+      "matched_signals": [],
+      "withhold_until": "2026-05-15T13:00:00Z"
+    }
+  ]
+}

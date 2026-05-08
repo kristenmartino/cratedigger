@@ -1,0 +1,47 @@
+[
+  {
+    "name": "Boomkat",
+    "slug": "boomkat",
+    "ingest_method": "scrape",
+    "ingest_url": "https://boomkat.com/new-this-week",
+    "default_weight": 1.0,
+    "genre_affinity": ["experimental-electronic", "dub-techno", "ambient", "IDM"],
+    "active": true
+  },
+  {
+    "name": "The Quietus",
+    "slug": "quietus",
+    "ingest_method": "rss",
+    "ingest_url": "https://thequietus.com/feed.xml",
+    "default_weight": 0.9,
+    "genre_affinity": ["experimental", "longreads"],
+    "active": true
+  },
+  {
+    "name": "Aquarium Drunkard",
+    "slug": "aquarium-drunkard",
+    "ingest_method": "rss",
+    "ingest_url": "https://aquariumdrunkard.com/feed/",
+    "default_weight": 0.7,
+    "genre_affinity": ["psych", "ambient", "kosmische"],
+    "active": true
+  },
+  {
+    "name": "Resident Advisor",
+    "slug": "resident-advisor",
+    "ingest_method": "scrape",
+    "ingest_url": "https://ra.co/reviews",
+    "default_weight": 0.8,
+    "genre_affinity": ["techno", "club", "experimental-electronic"],
+    "active": true
+  },
+  {
+    "name": "Bandcamp Daily",
+    "slug": "bandcamp-daily",
+    "ingest_method": "rss",
+    "ingest_url": "https://daily.bandcamp.com/feed",
+    "default_weight": 0.7,
+    "genre_affinity": ["experimental", "ambient", "label-oriented"],
+    "active": true
+  }
+]

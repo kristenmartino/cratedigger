@@ -1,0 +1,31 @@
+{
+  "name": "cratedigger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A weekly AI-curated music recommendation digest.",
+  "scripts": {
+    "dev": "pnpm --filter @cratedigger/web dev",
+    "dev:web": "pnpm --filter @cratedigger/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:psql": "docker compose exec db psql -U cratedigger -d cratediggerdb",
+    "db:push": "pnpm --filter @cratedigger/db push",
+    "db:studio": "pnpm --filter @cratedigger/db studio",
+    "seed": "cd services/agent && python scripts/seed.py",
+    "seed:reset": "cd services/agent && python scripts/seed.py --reset",
+    "api:dev": "cd services/api && uvicorn app.main:app --reload --port 8000",
+    "agent:run-issue": "cd services/agent && python scripts/run_issue.py"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  }
+}
