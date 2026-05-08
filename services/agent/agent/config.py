@@ -27,8 +27,12 @@ class Settings(BaseSettings):
 
     crawler_user_agent: str = "Crate Digger Music Digest / kristen@kristenmartino.ai"
 
+    # HMAC-checked on /v1/run-issue. Must match the value the cron caller sends.
+    pipeline_api_key: str = "dev-key"
+
     environment: str = "development"
     log_level: str = "info"
+    port: int = 8001
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

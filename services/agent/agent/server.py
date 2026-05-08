@@ -1,0 +1,204 @@
+"""FastAPI shell for the agent worker (Railway long-running service).
+
+Two responsibilities:
+
+1. **Background batch poller** — started in the lifespan, polls Anthropic
+   Message Batches every 60s and writes results to DB when ready.
+   Without this, batched prose generation never lands.
+
+2. **HMAC-checked /v1/run-issue endpoint** — the trigger for the weekly
+   LangGraph pipeline. Called by Vercel cron (Saturday 9pm ET) via the
+   Next.js cron route handler, which forwards `X-Pipeline-Key`.
+
+Read-only API endpoints (issues, archive, agent status, feedback) live in
+services/api — that service stays read-only so its uptime isn't coupled
+to agent failures.
+
+Deployment: Railway service rooted at services/agent, builds the local
+Dockerfile, runs `uvicorn agent.server:app`. Health check on /health.
+"""
+from __future__ import annotations
+
+import asyncio
+import hmac
+import logging
+import uuid
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from agent.batch_poller import run_batch_poller
+from agent.config import settings
+from agent.db import close_pool, get_pool, init_pool
+from agent.workflows.issue_workflow import IssueState, issue_pipeline
+
+logger = logging.getLogger("cratedigger-agent.server")
+
+API_VERSION = "0.1.0"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
+    logger.info("Starting cratedigger-agent (env=%s)", settings.environment)
+
+    if settings.pipeline_api_key in ("dev-key", "change-me-in-production", ""):
+        logger.warning(
+            "SECURITY: PIPELINE_API_KEY is set to a default/empty value. "
+            "Set a strong, unique key matching the value used by the cron caller."
+        )
+
+    try:
+        await init_pool()
+        logger.info("Database pool initialized")
+    except Exception as e:
+        logger.warning("Failed to connect to database: %s", e)
+
+    # Long-running batch poller in production only. In dev, run via
+    # `python -m agent.batch_poller` if you want to test the loop.
+    poller_task = None
+    if settings.environment == "production":
+        poller_task = asyncio.create_task(run_batch_poller())
+        logger.info("Batch poller task started")
+
+    yield
+
+    if poller_task:
+        poller_task.cancel()
+    await close_pool()
+    logger.info("cratedigger-agent shut down")
+
+
+app = FastAPI(
+    title="Crate Digger Agent",
+    version=API_VERSION,
+    description=(
+        "LangGraph weekly pipeline trigger + Anthropic Message Batches poller. "
+        "Read API lives separately at services/api."
+    ),
+    lifespan=lifespan,
+)
+
+
+# ── Security headers (harvested verbatim from services/api) ──────────────
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; frame-ancestors 'none'"
+        )
+        if settings.environment == "production":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=63072000; includeSubDomains; preload"
+            )
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ── Auth ─────────────────────────────────────────────────────────────────
+
+def _verify_pipeline_key(x_pipeline_key: str | None) -> None:
+    """Constant-time check on the X-Pipeline-Key header.
+    Used to gate the /v1/run-issue trigger endpoint.
+    """
+    if not x_pipeline_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing X-Pipeline-Key",
+        )
+    if not hmac.compare_digest(x_pipeline_key, settings.pipeline_api_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid X-Pipeline-Key",
+        )
+
+
+# ── Routes ───────────────────────────────────────────────────────────────
+
+@app.get("/", summary="Service info")
+async def root():
+    return {
+        "service": "cratedigger-agent",
+        "version": API_VERSION,
+        "endpoints": {
+            "health": "GET /health",
+            "run_issue": "POST /v1/run-issue",
+        },
+    }
+
+
+@app.get("/health", summary="Health check")
+async def health():
+    db_connected = False
+    try:
+        pool = await get_pool()
+        await pool.fetchval("SELECT 1")
+        db_connected = True
+    except Exception:
+        pass
+    return {
+        "status": "healthy" if db_connected else "degraded",
+        "version": API_VERSION,
+        "db_connected": db_connected,
+    }
+
+
+@app.post(
+    "/v1/run-issue",
+    summary="Trigger the weekly LangGraph issue pipeline",
+)
+async def run_issue(
+    request: Request,
+    x_pipeline_key: str | None = Header(default=None, alias="X-Pipeline-Key"),
+):
+    """Kick off the issue_pipeline. The body should be JSON with at minimum
+    a `user_id` field (the Clerk-mapped UUID to generate the issue for).
+
+    Returns immediately with the agent_run_id; the workflow runs in the
+    background. Poll `/v1/agent/status` (on the read API) for progress.
+    """
+    _verify_pipeline_key(x_pipeline_key)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id = body.get("user_id")
+    force = bool(body.get("force", False))
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id required",
+        )
+
+    run_id = str(uuid.uuid4())
+    initial: IssueState = {
+        "user_id": user_id,
+        "agent_run_id": run_id,
+        "force": force,
+        "errors": [],
+    }
+
+    async def _run():
+        try:
+            await issue_pipeline.ainvoke(initial)
+            logger.info("Issue pipeline completed for run %s", run_id)
+        except Exception as e:
+            logger.error("Issue pipeline failed for run %s: %s", run_id, e)
+
+    asyncio.create_task(_run())
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={"agent_run_id": run_id, "status": "running"},
+    )
