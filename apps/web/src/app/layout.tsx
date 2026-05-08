@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -43,6 +44,10 @@ export default function RootLayout({
             Skip to content
           </a>
           <main id="main-content">{children}</main>
+          {/* Privacy-preserving first-party analytics. No cookies, no PII,
+              no third-party scripts. Active only on Vercel deploys; no-op
+              locally. */}
+          <Analytics />
         </body>
       </html>
     </ClerkProvider>

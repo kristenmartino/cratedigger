@@ -80,7 +80,7 @@ If you can fork from Sift's repo rather than start clean, do that. The auth, emb
 - **Do not build a music-streaming feature.** Crate Digger does not stream. Listen links go to Bandcamp first, then Spotify if no Bandcamp page exists.
 - **Do not call deprecated Spotify endpoints.** Audio features, audio analysis, recommendations, related-artists, and 30-second previews are all dead for new apps as of Nov 27, 2024. Use ListenBrainz / MusicBrainz / Last.fm for metadata if needed; otherwise rely on text signals only.
 - **Do not generate album cover art with image models.** The mockups use SVG cover art that references actual label aesthetics. For real records, link to the label's actual cover art via Bandcamp / MusicBrainz / Discogs API. If unavailable, fall back to a generated SVG using the label's color palette.
-- **Do not add ads, analytics tracking pixels, or third-party scripts.** This is a quiet publication.
+- **Do not add ads or third-party tracking scripts.** This is a quiet publication. Vercel Web Analytics is allowed (first-party, no cookies, no PII, runs only on Vercel deploys) — relaxed 2026-05-08. Google Analytics, Mixpanel, Hotjar etc. remain out of bounds.
 - **Do not let the LLM hallucinate catalog numbers, label affiliations, or release dates.** Always pull these from the source's structured data or omit. A wrong catalog number breaks credibility instantly.
 - **Do not skip the feedback loop.** Hit/Miss/More buttons must wire to the taste model from day one. Without the loop, the rest of the system is just a static newsletter.
 - **Do not use `npm install` without checking `package.json` for the lockfile mode.** Use `pnpm` if a lockfile exists.
