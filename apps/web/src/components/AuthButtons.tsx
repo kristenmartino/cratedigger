@@ -7,6 +7,7 @@
  * blowing up the page.
  */
 import Link from "next/link";
+import type { Route } from "next";
 import { auth } from "@clerk/nextjs/server";
 import { SignOutForm } from "./SignOutForm";
 
@@ -24,7 +25,9 @@ export async function AuthButtons() {
 
   return (
     <Link
-      href="/sign-in"
+      // Clerk's optional-catch-all route doesn't register as a literal
+      // "/sign-in" with Next 15's typedRoutes — cast to satisfy the typer.
+      href={"/sign-in" as Route}
       className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink border-b-2 border-coral pb-[2px] hover:text-coral transition"
     >
       Sign in

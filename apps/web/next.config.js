@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    typedRoutes: true,
-  },
+  // Top-level in Next 15.5+ (was experimental.typedRoutes before).
+  typedRoutes: true,
   images: {
     // Cover art comes from Bandcamp, Discogs, MusicBrainz, label sites — diverse CDNs.
     remotePatterns: [{ protocol: "https", hostname: "**" }],

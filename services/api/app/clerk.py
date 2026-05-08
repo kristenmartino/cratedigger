@@ -17,7 +17,7 @@ from functools import lru_cache
 
 import httpx
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Header, HTTPException, status
 from jwt.algorithms import RSAAlgorithm
 
 from app.config import settings
