@@ -42,7 +42,7 @@ Same stack as Sift to maximize reuse:
 - **Auth:** Clerk
 - **Email:** Resend with MJML templates
 - **CI/CD:** GitHub Actions → Vercel (frontend) + Railway (backend)
-- **Hosting:** `cratedigger.ai` (frontend), backend on a Railway subdomain
+- **Hosting:** `cratedigger.kristenmartino.ai` (frontend) + `api.cratedigger.kristenmartino.ai` (backend, Railway-mapped). Subdomain reversal — see `SPRINT_PLAN.md` decision log.
 
 If you can fork from Sift's repo rather than start clean, do that. The auth, embedding, vector-search, and Claude-API plumbing already exist and are tested.
 

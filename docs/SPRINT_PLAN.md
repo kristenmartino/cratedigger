@@ -13,6 +13,9 @@ The principle: ship a working narrow vertical first. Don't build for unknown fut
 **2026-05-08 — Option C (sequencing): personalization is v1-architectural; v1.1 ↔ v1.2 swap.**
 Per-user taste profiles via quiz / playlist / history ingestion are not a v1.3 nice-to-have. v1 still ships single-user, but the seed script invokes the *real ingestion pipeline* (`agent.ingestion.seed_profile.build_profile_from_seed`) so the code path is exercised from day one. v1.1 (was annotations) is now multi-user onboarding; v1.2 is annotations; v1.3 is listening journal. See per-section notes below.
 
+**2026-05-08 — Domain: subdomain, not standalone.**
+Original handoff chose `cratedigger.ai` as an independent product domain. Reversed: shipping at `cratedigger.kristenmartino.ai` instead. Cheaper (no registration), faster (DNS already live for `kristenmartino.ai`), and the Resend domain-verification clock can run on the parent `kristenmartino.ai` (already required for the editor's email anyway). Matches Sift's pattern (`siftnews.kristenmartino.ai`). Re-evaluate at v1.3 multi-user — if the product opens up, a standalone domain may be worth the price for credibility.
+
 **2026-05-08 — Option D (tech): Sift harvest, not fork.**
 The "60% Sift reuse" estimate from the original handoff didn't survive the audit (real reuse: ~35% backend, ~25% frontend by LOC). Sift's news abstractions (10-category constant in 7 files, story-clusterer, civic-dossier tables, in-process FastAPI scheduler, two-repo split) actively work against CD's domain. Decision: **build per the handoff's monorepo + Drizzle + pnpm plan, harvest only specific leaf utilities and conventions from Sift.** See `../HARVESTED_FROM_SIFT.md` for the manifest.
 
@@ -90,7 +93,7 @@ Deliverables:
 - [ ] State badges on archive records reflect the user's actual feedback history
 - [ ] Mobile responsive on the editorial; archive degrades gracefully
 
-**Definition of done:** opening `cratedigger.ai/issue/4` shows the same content as the v4 mockup, but pulled from the database. Clicking "Hit" on a record persists, refresh shows the badge in the archive.
+**Definition of done:** opening `cratedigger.kristenmartino.ai/issue/4` shows the same content as the v4 mockup, but pulled from the database. Clicking "Hit" on a record persists, refresh shows the badge in the archive.
 
 ### Week 6 — Email + Friday + polish
 

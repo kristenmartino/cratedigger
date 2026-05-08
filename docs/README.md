@@ -36,7 +36,7 @@ The spec assumes ~60% reuse of the Sift codebase (Next.js 15 + FastAPI + LangGra
 ## Project identity
 
 - **Working name:** Crate Digger
-- **Domain:** `cratedigger.ai` (independent product domain — not a portfolio subdomain)
+- **Domain:** `cratedigger.kristenmartino.ai` (originally planned as independent `cratedigger.ai`; reversed 2026-05-08 — see `SPRINT_PLAN.md` decision log)
 - **Cadence:** Weekly Sunday delivery, Friday surprise drop for subscribers
 - **Format:** Email primary, web archive secondary, both rendered from same content
 - **Audience:** v1 is for Kristen herself; v1.3 opens to a small invite list

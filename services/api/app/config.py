@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     clerk_issuer: str = ""
 
     # CORS allowlist (comma-separated)
-    cors_origins: str = "http://localhost:3000,https://cratedigger.ai,https://www.cratedigger.ai"
+    cors_origins: str = "http://localhost:3000,https://cratedigger.kristenmartino.ai"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

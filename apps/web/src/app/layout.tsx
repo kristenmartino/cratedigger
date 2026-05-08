@@ -3,7 +3,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://cratedigger.ai"),
+  metadataBase: new URL("https://cratedigger.kristenmartino.ai"),
   title: {
     default: "Crate Digger",
     template: "%s — Crate Digger",

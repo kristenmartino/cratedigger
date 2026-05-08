@@ -14,7 +14,7 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' https: data:",
-      "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.services http://localhost:8000 https://api.cratedigger.ai",
+      "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.services http://localhost:8000 https://api.cratedigger.kristenmartino.ai",
       "frame-src https://*.clerk.accounts.dev https://*.clerk.services https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
       "form-action 'self'",
