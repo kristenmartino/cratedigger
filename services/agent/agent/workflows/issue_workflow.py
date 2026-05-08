@@ -18,6 +18,12 @@ from __future__ import annotations
 import logging
 from typing import Any, TypedDict
 
+# Note: importing langgraph triggers a `LangChainPendingDeprecationWarning`
+# about `allowed_objects` defaulting changing. We don't construct the
+# affected JsonPlusSerializer directly (langgraph does, internally), and
+# the warning bypasses standard `warnings.filterwarnings` / `catch_warnings`
+# suppression — likely emitted via a custom langchain mechanism. Living
+# with the noise rather than monkey-patching warnings.warn.
 from langgraph.graph import END, StateGraph
 
 logger = logging.getLogger("cratedigger-agent.workflows.issue")
