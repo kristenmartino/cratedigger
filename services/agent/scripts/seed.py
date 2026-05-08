@@ -54,7 +54,9 @@ def normalize(text: str) -> str:
     if not text:
         return ""
     folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    return _SPACE_RE.sub(" ", _PUNCT_RE.sub(" ", folded.lower())).strip()
+    # Strip punctuation entirely (not replace with space) — otherwise
+    # "Nous'klaer" and "Nousklaer" produce different keys and don't dedup.
+    return _SPACE_RE.sub(" ", _PUNCT_RE.sub("", folded.lower())).strip()
 
 
 # ── Steps ────────────────────────────────────────────────────────────────

@@ -49,11 +49,15 @@ _SPACE_RE = re.compile(r"\s+")
 
 
 def normalize(text: str) -> str:
-    """Lowercase, ASCII-fold, strip punctuation, collapse whitespace."""
+    """Lowercase, ASCII-fold, strip punctuation, collapse whitespace.
+
+    Punctuation is stripped entirely (replaced with empty), not with space —
+    otherwise "Nous'klaer" and "Nousklaer" produce different dedup keys.
+    """
     if not text:
         return ""
     folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    return _SPACE_RE.sub(" ", _PUNCT_RE.sub(" ", folded.lower())).strip()
+    return _SPACE_RE.sub(" ", _PUNCT_RE.sub("", folded.lower())).strip()
 
 
 def stable_hash(s: str) -> str:
