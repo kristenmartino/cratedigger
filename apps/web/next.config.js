@@ -10,12 +10,12 @@ const nextConfig = {
     const csp = [
       "default-src 'self'",
       // 'unsafe-inline' for Tailwind injected styles + Clerk UI + theme init script
-      "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.clerk.services https://challenges.cloudflare.com",
+      "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.clerk.services https://clerk.cratedigger.kristenmartino.ai https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' https: data:",
-      "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.services http://localhost:8000 https://api.cratedigger.kristenmartino.ai",
-      "frame-src https://*.clerk.accounts.dev https://*.clerk.services https://challenges.cloudflare.com",
+      "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.services https://clerk.cratedigger.kristenmartino.ai http://localhost:8000 https://api.cratedigger.kristenmartino.ai",
+      "frame-src https://*.clerk.accounts.dev https://*.clerk.services https://clerk.cratedigger.kristenmartino.ai https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
       "form-action 'self'",
       "base-uri 'self'",
