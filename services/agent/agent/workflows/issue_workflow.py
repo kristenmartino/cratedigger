@@ -44,8 +44,7 @@ from agent.runs import (
     update_agent_run,
 )
 from agent.scoring import derive_matched_signals, score_release
-from agent.sources.boomkat import scrape_boomkat
-from agent.sources.resident_advisor import scrape_resident_advisor
+from agent.sources import SCRAPERS
 from agent.sources.rss import RawRelease, fetch_all_rss_sources, normalize
 
 logger = logging.getLogger("cratedigger-agent.workflows.issue")
@@ -168,18 +167,20 @@ async def ingest_sources_node(state: IssueState) -> dict:
         raw.extend(rss_releases)
         await increment_counters(run_id, sources_scanned=len(rss_only))
 
-    # Scrapers are per-source.
+    # Scrapers are per-source. Dispatch via the SCRAPERS registry —
+    # adding a new scraper = drop a module under agent/sources/ and
+    # register it in agent/sources/__init__.py.
     for s in sources:
         if s["ingest_method"] != "scrape":
             continue
         await update_agent_run(run_id, current_source=s["slug"])
+        scraper = SCRAPERS.get(s["slug"])
+        if scraper is None:
+            logger.warning("No scraper registered for source %r", s["slug"])
+            await increment_counters(run_id, sources_scanned=1)
+            continue
         try:
-            if s["slug"] == "boomkat":
-                raw.extend(await scrape_boomkat())
-            elif s["slug"] == "resident-advisor":
-                raw.extend(await scrape_resident_advisor())
-            else:
-                logger.warning("No scraper registered for source %r", s["slug"])
+            raw.extend(await scraper())
         except Exception as e:
             logger.error("Scraper for %s raised: %s", s["slug"], e)
         await increment_counters(run_id, sources_scanned=1)

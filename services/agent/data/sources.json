@@ -43,5 +43,41 @@
     "default_weight": 0.7,
     "genre_affinity": ["experimental", "ambient", "label-oriented"],
     "active": true
+  },
+  {
+    "name": "A Closer Listen",
+    "slug": "a-closer-listen",
+    "ingest_method": "rss",
+    "ingest_url": "https://acloserlisten.com/feed/",
+    "default_weight": 0.75,
+    "genre_affinity": ["ambient", "modern-classical", "post-rock", "experimental"],
+    "active": true
+  },
+  {
+    "name": "FACT Magazine",
+    "slug": "fact-mag",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.factmag.com/feed/",
+    "default_weight": 0.7,
+    "genre_affinity": ["electronic", "club", "hip-hop", "experimental"],
+    "active": true
+  },
+  {
+    "name": "Pitchfork (Best New Albums)",
+    "slug": "pitchfork-best-albums",
+    "ingest_method": "rss",
+    "ingest_url": "https://pitchfork.com/rss/reviews/best/albums/",
+    "default_weight": 0.6,
+    "genre_affinity": ["indie", "experimental", "electronic"],
+    "active": true
+  },
+  {
+    "name": "Norman Records",
+    "slug": "norman-records",
+    "ingest_method": "scrape",
+    "ingest_url": "https://www.normanrecords.com/en/this-week-only",
+    "default_weight": 0.85,
+    "genre_affinity": ["indie", "experimental", "ambient", "krautrock", "post-punk"],
+    "active": true
   }
 ]
