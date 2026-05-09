@@ -24,7 +24,7 @@ export default function HomePage() {
       </p>
 
       <p className="mt-12 font-mono text-[10px] uppercase tracking-[0.28em] text-coral">
-        — Issue 04 · Sunday, 7 May 2026 —
+        — Issue 04 · Sunday, 10 May 2026 —
       </p>
 
       <p className="mt-6 max-w-xl font-body text-[15px] leading-relaxed text-ink-soft italic">
