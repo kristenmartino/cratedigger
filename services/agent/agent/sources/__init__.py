@@ -13,7 +13,9 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
+from agent.sources.bleep import scrape_bleep
 from agent.sources.boomkat import scrape_boomkat
+from agent.sources.hardwax import scrape_hardwax
 from agent.sources.norman_records import scrape_norman_records
 from agent.sources.resident_advisor import scrape_resident_advisor
 from agent.sources.rss import RawRelease
@@ -24,6 +26,8 @@ SCRAPERS: dict[str, ScraperFn] = {
     "boomkat": scrape_boomkat,
     "resident-advisor": scrape_resident_advisor,
     "norman-records": scrape_norman_records,
+    "hardwax": scrape_hardwax,
+    "bleep": scrape_bleep,
 }
 
 __all__ = ["SCRAPERS", "ScraperFn", "RawRelease"]
