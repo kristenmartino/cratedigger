@@ -70,9 +70,17 @@ def stable_hash(s: str) -> str:
 
 async def fetch_rss(source_slug: str, url: str) -> list[RawRelease]:
     """Fetch and parse one RSS feed. Returns RawReleases."""
-    headers = {"User-Agent": settings.crawler_user_agent}
+    headers = {
+        "User-Agent": settings.crawler_user_agent,
+        "Accept": (
+            "application/rss+xml, application/atom+xml;q=0.9, "
+            "application/xml;q=0.8, text/xml;q=0.7, */*;q=0.5"
+        ),
+    }
     try:
-        async with httpx.AsyncClient(timeout=20.0, headers=headers) as http:
+        async with httpx.AsyncClient(
+            timeout=20.0, headers=headers, follow_redirects=True
+        ) as http:
             resp = await http.get(url)
             resp.raise_for_status()
             body = resp.content

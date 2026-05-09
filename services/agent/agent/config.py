@@ -25,7 +25,15 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_address: str = "editor@kristenmartino.ai"
 
-    crawler_user_agent: str = "Crate Digger Music Digest / kristen@kristenmartino.ai"
+    # Polite-bot UA following the Googlebot/Feedly convention. The plain-text
+    # "Crate Digger Music Digest" form was correctly identifying us, but generic
+    # 403s from Cloudflare-fronted publishers (Quietus, Substacks, indie shops)
+    # require the Mozilla/5.0 prefix to pass the default WAF rules. Mailto stays
+    # so site owners can still reach us from server logs.
+    crawler_user_agent: str = (
+        "Mozilla/5.0 (compatible; CrateDigger/1.0; "
+        "+mailto:kristen@kristenmartino.ai)"
+    )
 
     # HMAC-checked on /v1/run-issue. Must match the value the cron caller sends.
     pipeline_api_key: str = "dev-key"

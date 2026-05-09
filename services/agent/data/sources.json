@@ -63,10 +63,10 @@
     "active": true
   },
   {
-    "name": "Pitchfork (Best New Albums)",
-    "slug": "pitchfork-best-albums",
+    "name": "Pitchfork (Album Reviews)",
+    "slug": "pitchfork-album-reviews",
     "ingest_method": "rss",
-    "ingest_url": "https://pitchfork.com/rss/reviews/best/albums/",
+    "ingest_url": "https://pitchfork.com/feed/feed-album-reviews/rss",
     "default_weight": 0.6,
     "genre_affinity": ["indie", "experimental", "electronic"],
     "active": true
@@ -84,7 +84,7 @@
     "name": "The Wire",
     "slug": "the-wire",
     "ingest_method": "rss",
-    "ingest_url": "https://www.thewire.co.uk/articles/feed/",
+    "ingest_url": "https://www.thewire.co.uk/news/feed",
     "default_weight": 0.95,
     "genre_affinity": ["experimental", "avant-garde", "jazz", "improvisation"],
     "active": true
@@ -159,6 +159,6 @@
     "ingest_url": "https://bleep.com/genre/all/new-releases",
     "default_weight": 0.8,
     "genre_affinity": ["electronic", "experimental", "ambient", "indie"],
-    "active": true
+    "active": false
   }
 ]
