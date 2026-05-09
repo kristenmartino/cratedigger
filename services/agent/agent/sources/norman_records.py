@@ -19,6 +19,7 @@ import httpx
 from selectolax.parser import HTMLParser, Node
 
 from agent.config import settings
+from agent.sources._debug import log_no_cards_diagnostic
 from agent.sources.rss import RawRelease
 
 logger = logging.getLogger("cratedigger-agent.sources.norman_records")
@@ -114,9 +115,7 @@ async def scrape_norman_records() -> list[RawRelease]:
             break
 
     if not cards:
-        logger.warning(
-            "Norman Records: no product cards found — selectors may have drifted"
-        )
+        log_no_cards_diagnostic(logger, "norman-records", html)
         return []
 
     out: list[RawRelease] = []

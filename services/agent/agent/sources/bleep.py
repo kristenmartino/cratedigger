@@ -16,6 +16,7 @@ import httpx
 from selectolax.parser import HTMLParser, Node
 
 from agent.config import settings
+from agent.sources._debug import log_no_cards_diagnostic
 from agent.sources.rss import RawRelease
 
 logger = logging.getLogger("cratedigger-agent.sources.bleep")
@@ -108,7 +109,7 @@ async def scrape_bleep() -> list[RawRelease]:
             break
 
     if not cards:
-        logger.warning("Bleep: no product cards found — selectors may have drifted")
+        log_no_cards_diagnostic(logger, "bleep", html)
         return []
 
     out: list[RawRelease] = []

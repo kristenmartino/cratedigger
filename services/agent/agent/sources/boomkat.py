@@ -18,6 +18,7 @@ import httpx
 from selectolax.parser import HTMLParser, Node
 
 from agent.config import settings
+from agent.sources._debug import log_no_cards_diagnostic
 from agent.sources.rss import RawRelease
 
 logger = logging.getLogger("cratedigger-agent.sources.boomkat")
@@ -110,7 +111,7 @@ async def scrape_boomkat() -> list[RawRelease]:
             break
 
     if not cards:
-        logger.warning("Boomkat: no product cards found — selectors may have drifted")
+        log_no_cards_diagnostic(logger, "boomkat", html)
         return []
 
     out: list[RawRelease] = []

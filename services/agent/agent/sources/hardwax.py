@@ -19,6 +19,7 @@ import httpx
 from selectolax.parser import HTMLParser, Node
 
 from agent.config import settings
+from agent.sources._debug import log_no_cards_diagnostic
 from agent.sources.rss import RawRelease
 
 logger = logging.getLogger("cratedigger-agent.sources.hardwax")
@@ -116,7 +117,7 @@ async def scrape_hardwax() -> list[RawRelease]:
             break
 
     if not cards:
-        logger.warning("Hardwax: no records found — selectors may have drifted")
+        log_no_cards_diagnostic(logger, "hardwax", html)
         return []
 
     out: list[RawRelease] = []
