@@ -81,6 +81,38 @@ def artist_fatigue(artist: str, recent_artists: list[str]) -> float:
     return 0.0
 
 
+def derive_matched_signals(
+    release_tags: list[str],
+    user_tags: dict[str, float],
+    *,
+    boosted_threshold: float = 0.8,
+) -> list[dict]:
+    """Structured tag-intersection between a release and the user's taste.
+
+    Returned shape matches the v4 mockup's matched-signals microsection:
+        [{label, weight, boosted}, ...]
+    Sorted by weight desc so the UI can render the top-N without re-sorting.
+    """
+    if not release_tags or not user_tags:
+        return []
+    seen: set[str] = set()
+    out: list[dict] = []
+    for tag in release_tags:
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        weight = user_tags.get(tag)
+        if weight is None:
+            continue
+        out.append({
+            "label": tag,
+            "weight": weight,
+            "boosted": weight >= boosted_threshold,
+        })
+    out.sort(key=lambda s: s["weight"], reverse=True)
+    return out
+
+
 def score_release(
     *,
     release_embedding: list[float],

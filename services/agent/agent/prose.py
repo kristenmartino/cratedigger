@@ -116,6 +116,46 @@ async def generate_prose_live(context: dict) -> dict | None:
         return None
 
 
+PULL_QUOTE_GUARD = """\
+You are picking ONE pull quote for a Crate Digger editorial paragraph.
+
+RULES
+- 4 to 8 words.
+- Verbatim from the prose (no rewording, no punctuation changes besides
+  trimming a trailing comma/period). Preserve italics/bold markdown if part
+  of the chosen phrase.
+- Pick the line that would still mean something on its own — concrete imagery
+  or a specific claim, not a connective fragment.
+- Output only the phrase. No quotes around it. No explanation.
+"""
+
+
+async def generate_pull_quote_live(prose: str) -> str | None:
+    """Single-shot Haiku call to extract a pull quote from a piece of prose."""
+    if not settings.anthropic_api_key or not prose:
+        return None
+
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    try:
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=40,
+            system=PULL_QUOTE_GUARD,
+            messages=[{"role": "user", "content": prose}],
+        )
+        log_usage("pull_quote.live", response, model=MODEL)
+    except Exception as e:
+        logger.error("generate_pull_quote_live failed: %s", e)
+        return None
+
+    text = "".join(
+        block.text for block in response.content
+        if getattr(block, "type", "") == "text"
+    ).strip().strip('"').strip("'")
+
+    return text or None
+
+
 async def submit_prose_batch(contexts: list[dict]) -> str | None:
     """Submit a batch of prose generation requests. Each context is one record."""
     requests = []
