@@ -79,5 +79,86 @@
     "default_weight": 0.85,
     "genre_affinity": ["indie", "experimental", "ambient", "krautrock", "post-punk"],
     "active": true
+  },
+  {
+    "name": "The Wire",
+    "slug": "the-wire",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.thewire.co.uk/articles/feed/",
+    "default_weight": 0.95,
+    "genre_affinity": ["experimental", "avant-garde", "jazz", "improvisation"],
+    "active": true
+  },
+  {
+    "name": "Tone Glow",
+    "slug": "tone-glow",
+    "ingest_method": "rss",
+    "ingest_url": "https://toneglow.substack.com/feed",
+    "default_weight": 0.85,
+    "genre_affinity": ["experimental", "contemporary-classical", "ambient"],
+    "active": true
+  },
+  {
+    "name": "Crack Magazine",
+    "slug": "crack-magazine",
+    "ingest_method": "rss",
+    "ingest_url": "https://crackmagazine.net/feed/",
+    "default_weight": 0.7,
+    "genre_affinity": ["electronic", "club", "hip-hop", "indie"],
+    "active": true
+  },
+  {
+    "name": "Headphone Commute",
+    "slug": "headphone-commute",
+    "ingest_method": "rss",
+    "ingest_url": "https://headphonecommute.com/feed/",
+    "default_weight": 0.75,
+    "genre_affinity": ["ambient", "modern-classical", "drone"],
+    "active": true
+  },
+  {
+    "name": "Stereogum",
+    "slug": "stereogum",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.stereogum.com/feed/",
+    "default_weight": 0.55,
+    "genre_affinity": ["indie", "rock", "alternative"],
+    "active": true
+  },
+  {
+    "name": "Loud and Quiet",
+    "slug": "loud-and-quiet",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.loudandquiet.com/feed/",
+    "default_weight": 0.6,
+    "genre_affinity": ["indie", "alternative", "electronic"],
+    "active": true
+  },
+  {
+    "name": "Drowned in Sound",
+    "slug": "drowned-in-sound",
+    "ingest_method": "rss",
+    "ingest_url": "https://drownedinsound.substack.com/feed",
+    "default_weight": 0.55,
+    "genre_affinity": ["indie", "alternative", "post-rock"],
+    "active": true
+  },
+  {
+    "name": "Hardwax",
+    "slug": "hardwax",
+    "ingest_method": "scrape",
+    "ingest_url": "https://hardwax.com/this-week/",
+    "default_weight": 0.95,
+    "genre_affinity": ["techno", "dub-techno", "experimental-electronic", "house"],
+    "active": true
+  },
+  {
+    "name": "Bleep",
+    "slug": "bleep",
+    "ingest_method": "scrape",
+    "ingest_url": "https://bleep.com/genre/all/new-releases",
+    "default_weight": 0.8,
+    "genre_affinity": ["electronic", "experimental", "ambient", "indie"],
+    "active": true
   }
 ]
