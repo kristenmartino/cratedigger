@@ -57,4 +57,11 @@ jobs:
             scrape-only) ARGS="$ARGS --scrape-only" ;;
           esac
           echo "Running: python scripts/crawl_check.py $ARGS"
-          python scripts/crawl_check.py $ARGS
+          python scripts/crawl_check.py $ARGS 2>&1 | tee /tmp/crawl.out
+          {
+            echo '## Crawl check'
+            echo
+            echo '```'
+            cat /tmp/crawl.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
