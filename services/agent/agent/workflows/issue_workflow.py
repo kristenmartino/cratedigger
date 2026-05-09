@@ -32,7 +32,7 @@ from typing import Any, TypedDict
 # with the noise rather than monkey-patching warnings.warn.
 from langgraph.graph import END, StateGraph
 
-from agent.categorization import CategorizedPick, ScoredCandidate, categorize
+from agent.categorization import ScoredCandidate, categorize
 from agent.db import get_pool
 from agent.editor_note import generate_editor_note_live
 from agent.embedder import embed_texts
