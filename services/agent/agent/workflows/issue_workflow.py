@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, TypedDict
 
 # Note: importing langgraph triggers a `LangChainPendingDeprecationWarning`
@@ -83,6 +83,31 @@ class IssueState(TypedDict, total=False):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
+def upcoming_sunday(today: date | None = None) -> date:
+    """The Sunday on which the next issue ships.
+
+    Per SPRINT_PLAN.md: issues publish Sunday morning; the Saturday-night cron
+    fires at 02:00 UTC Sunday. So the publish date is always the Sunday on or
+    after `today`. If `today` is already Sunday, return it.
+    """
+    today = today or datetime.now(timezone.utc).date()
+    # Python: Monday=0 ... Sunday=6
+    days_until_sunday = (6 - today.weekday()) % 7
+    return today + timedelta(days=days_until_sunday)
+
+
+def friday_drop_at(publish_date: date) -> datetime:
+    """Timestamp at which the withheld record becomes visible.
+
+    Friday 13:00 UTC = Friday 09:00 EDT / 08:00 EST — matches the Friday-8am-ET
+    cron in SPRINT_PLAN.md and the seed fixture (`2026-05-15T13:00:00Z`).
+    Five days after a Sunday publish lands on Friday.
+    """
+    return datetime.combine(
+        publish_date + timedelta(days=5), time(13, 0), tzinfo=timezone.utc
+    )
+
 
 def _confidence_for(score: float) -> str:
     if score > 0.85:
@@ -645,6 +670,9 @@ async def persist_issue_node(state: IssueState) -> dict:
         for slug in releases.get(p["release_id"], {}).get("sources_seen") or []:
             sources_used[slug] = sources_used.get(slug, 0) + 1
 
+    publish_date = upcoming_sunday()
+    withhold_drop_at = friday_drop_at(publish_date)
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -653,13 +681,16 @@ async def persist_issue_node(state: IssueState) -> dict:
                 existing = await conn.fetchrow(
                     """
                     SELECT id::text FROM issues
-                     WHERE user_id = $1::uuid AND publish_date = CURRENT_DATE
+                     WHERE user_id = $1::uuid AND publish_date = $2
                      LIMIT 1
                     """,
-                    user_id,
+                    user_id, publish_date,
                 )
             if existing:
-                msg = f"persist_issue: issue already published today ({existing['id']}); skipping"
+                msg = (
+                    f"persist_issue: issue already exists for "
+                    f"{publish_date.isoformat()} ({existing['id']}); skipping"
+                )
                 logger.info(msg)
                 await update_agent_run(run_id, notes=msg)
                 return {"issue_id": existing["id"]}
@@ -681,10 +712,10 @@ async def persist_issue_node(state: IssueState) -> dict:
                     user_id, issue_number, volume, publish_date, status,
                     title, editor_note, sources_used, agent_run_id
                 )
-                VALUES ($1::uuid, $2, 1, CURRENT_DATE, 'draft', $3, $4, $5::jsonb, $6::uuid)
+                VALUES ($1::uuid, $2, 1, $3, 'draft', $4, $5, $6::jsonb, $7::uuid)
                 RETURNING id::text
                 """,
-                user_id, next_num, title, editor_note,
+                user_id, next_num, publish_date, title, editor_note,
                 json.dumps(sources_used), run_id,
             )
             issue_id = issue_row["id"]
@@ -696,11 +727,9 @@ async def persist_issue_node(state: IssueState) -> dict:
                 signals = matched.get(rid, [])
                 sc = scored.get(rid, {})
                 cover = rel.get("cover_art_url") or None
-                withhold_until = None
-                if p["category"] == "withheld":
-                    withhold_until = await conn.fetchval(
-                        "SELECT NOW() + INTERVAL '5 days'"
-                    )
+                withhold_until = (
+                    withhold_drop_at if p["category"] == "withheld" else None
+                )
 
                 await conn.execute(
                     """
