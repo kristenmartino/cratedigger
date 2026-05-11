@@ -313,6 +313,7 @@ export const agentRuns = pgTable(
     releasesScanned: integer("releases_scanned").notNull().default(0),
     candidatesConsidered: integer("candidates_considered").notNull().default(0),
     recordsSurfaced: integer("records_surfaced").notNull().default(0),
+    releasesDroppedAsNews: integer("releases_dropped_as_news").notNull().default(0),
     notes: text("notes"),
   },
   (t) => ({

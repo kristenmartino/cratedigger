@@ -4,7 +4,7 @@ This file is read by Claude Code at the start of every session. It is the persis
 
 ## What we're building
 
-**Crate Digger** is a weekly AI-curated music recommendation digest. Every Sunday, an agent reads a configurable list of music criticism sources (Boomkat, The Quietus, Aquarium Drunkard, Resident Advisor, Bandcamp Daily, etc.), scores new releases against a personal taste model, and publishes an editorial digest of four records — plus a fifth held back for a Friday surprise email.
+**Crate Digger** is a weekly AI-curated music recommendation digest. Every Sunday, an agent reads a configurable list of music criticism sources (currently 10 active: A Closer Listen, Aquarium Drunkard, Bandcamp Daily, Crack Magazine, FACT Magazine, Loud and Quiet, Pitchfork, Stereogum, Hardwax, Resident Advisor — see `SOURCES.md` for the full forensics), scores new releases against a personal taste model, and publishes an editorial digest of four records — plus a fifth held back for a Friday surprise email.
 
 There are two surfaces:
 
@@ -18,12 +18,13 @@ Both surfaces render the same underlying content from the same database. They di
 A LangGraph pipeline runs every Saturday night to produce Sunday morning's issue:
 
 1. **Ingest** — pull new releases from monitored sources (RSS, scrape fallback, dedup against past issues)
-2. **Embed** — Voyage AI embeds release descriptions into pgvector
-3. **Score** — for each user, compute a match score against their taste profile (boosted tags + seed history + source weights + recency)
-4. **Categorize** — pick 1 Lead (highest confidence), 2 Steady (in-pocket matches), 1 Stretch (low-confidence but interesting), 1 Withheld (Friday drop)
-5. **Reason** — Claude Haiku 4.5 generates the editorial paragraph, pull quote, and matched-signals tags for each record
-6. **Render** — populate templates, generate email + web pages
-7. **Deliver** — Resend for email, Vercel/static for web
+2. **Extract** — Claude Haiku classifies entries that came in with no artist (most magazine RSS) as release-vs-news, pulling `(artist, title)` for the releases so dedup downstream has real keys to work with
+3. **Embed** — Voyage AI embeds release descriptions into pgvector
+4. **Score** — for each user, compute a match score against their taste profile (boosted tags + seed history + source weights + recency)
+5. **Categorize** — pick 1 Lead (highest confidence), 2 Steady (in-pocket matches), 1 Stretch (low-confidence but interesting), 1 Withheld (Friday drop)
+6. **Reason** — Claude Haiku 4.5 generates the editorial paragraph, pull quote, and matched-signals tags for each record
+7. **Render** — populate templates, generate email + web pages
+8. **Deliver** — Resend for email, Vercel/static for web
 
 A separate Friday job triggers the withheld-record email.
 
@@ -116,7 +117,7 @@ python scripts/run_issue.py       # manually generate issue 04 for the dev user
 > Read CLAUDE.md, DESIGN_SYSTEM.md, and `mockups/cratedigger-newsletter.html`. Build the editorial digest page at `/issue/[n]` as a Next.js 15 RSC, matching the mockup pixel-for-pixel including the system-strip, signal blocks, matched-signals microsections, sticky track-nav, and now-digging widget. Pull data from the API; don't hardcode the content from the mockup. Show me the diff before applying.
 
 **For agent kickoff (after data layer exists):**
-> Read CLAUDE.md and SPEC.md sections 4-6. Build the LangGraph pipeline that ingests from the 5 sources in the seed data, embeds with Voyage, scores against my taste profile (use the seed profile from `scripts/seed`), and outputs a structured Issue object matching the schema. Don't render anything yet — just generate the data and write it to the DB. We'll wire the rendering separately.
+> Read CLAUDE.md and SPEC.md sections 4-6. Build the LangGraph pipeline that ingests from the 10 active sources in `data/sources.json`, embeds with Voyage, scores against my taste profile (use the seed profile from `scripts/seed`), and outputs a structured Issue object matching the schema. Don't render anything yet — just generate the data and write it to the DB. We'll wire the rendering separately.
 
 **For the archive surface (later):**
 > Read CLAUDE.md, DESIGN_SYSTEM.md, and `mockups/cratedigger-archive.html`. Build the `/archive` route as a desktop-priority interface matching the mockup, including the window chrome, sidebar filters, issue dividers, records grid with state badges, and live agent-status indicator. The agent-status should pull from the `agent_runs` table.
@@ -138,6 +139,6 @@ python scripts/run_issue.py       # manually generate issue 04 for the dev user
 
 ## Open questions
 
-- **Source crawling:** RSS where available, scraping where not. Boomkat doesn't publish a clean feed — what's the fallback? (See SPEC.md §3.2.)
+- **Inactive sources reactivation path:** Boomkat, Norman Records, The Quietus, Tone Glow, Drowned in Sound, Headphone Commute all 4xx from datacenter IPs (Cloudflare + Substack maintain block lists for them). TLS impersonation via `curl_cffi`/Chrome-131 didn't help. A residential proxy (~$50-100/mo) is the realistic unblock. Documented in `SOURCES.md`.
 - **Email deliverability:** Verify domain SPF/DKIM/DMARC for `kristenmartino.ai` before scaling beyond Kristen's own inbox.
 - **Cold-start UX:** When the first new user signs up, what does their first issue look like? They have no taste profile yet. Per Option C, the quiz onboarding lands in v1.1 — the experience needs to be designed before then. Even with the quiz, the first issue leans on the seed→tags pipeline; the model needs at least one feedback round to calibrate.

@@ -24,6 +24,7 @@ _ALLOWED_FIELDS = {
     "releases_scanned",
     "candidates_considered",
     "records_surfaced",
+    "releases_dropped_as_news",
     "notes",
 }
 

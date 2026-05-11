@@ -237,10 +237,13 @@ async def extract_artist_title_node(state: IssueState) -> dict:
 
     enriched = await extract_releases(needs_extraction)
     kept = [e for e in enriched if e.get("is_release")]
+    dropped = len(needs_extraction) - len(kept)
     logger.info(
         "extract_artist_title: kept %d / %d as releases, dropped %d as news",
-        len(kept), len(needs_extraction), len(needs_extraction) - len(kept),
+        len(kept), len(needs_extraction), dropped,
     )
+    if dropped:
+        await increment_counters(run_id, releases_dropped_as_news=dropped)
 
     return {"raw_releases": already_clean + kept}
 
