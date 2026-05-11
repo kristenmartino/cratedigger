@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
     matched_signals   JSONB NOT NULL DEFAULT '[]'::jsonb,
     cover_art_url     TEXT,
     withhold_until    TIMESTAMPTZ,
+    withheld_delivered_at TIMESTAMPTZ,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT recommendations_issue_position_unique UNIQUE (issue_id, position)
 );
@@ -164,6 +165,11 @@ CREATE INDEX IF NOT EXISTS idx_recommendations_release
 CREATE INDEX IF NOT EXISTS idx_recommendations_withhold
     ON recommendations(withhold_until)
     WHERE withhold_until IS NOT NULL;
+
+-- Idempotent backfill for DBs that pre-date the column add in the
+-- CREATE TABLE above. Same pattern as agent_runs.releases_dropped_as_news.
+ALTER TABLE recommendations
+    ADD COLUMN IF NOT EXISTS withheld_delivered_at TIMESTAMPTZ;
 
 -- ── feedback ──────────────────────────────────────────────────────────────
 

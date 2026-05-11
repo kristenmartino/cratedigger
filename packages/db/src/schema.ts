@@ -227,6 +227,7 @@ export const recommendations = pgTable(
     matchedSignals: jsonb("matched_signals").notNull().default(sql`'[]'::jsonb`),
     coverArtUrl: text("cover_art_url"),
     withholdUntil: timestamp("withhold_until", { withTimezone: true }),
+    withheldDeliveredAt: timestamp("withheld_delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({

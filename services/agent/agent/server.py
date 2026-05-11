@@ -32,6 +32,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from agent.batch_poller import run_batch_poller
 from agent.config import settings
 from agent.db import close_pool, get_pool, init_pool
+from agent.friday_drop import deliver_friday_drops_for_user
 from agent.workflows.issue_workflow import IssueState, issue_pipeline
 
 logger = logging.getLogger("cratedigger-agent.server")
@@ -132,6 +133,7 @@ async def root():
         "endpoints": {
             "health": "GET /health",
             "run_issue": "POST /v1/run-issue",
+            "friday_drop": "POST /v1/friday-drop",
         },
     }
 
@@ -201,4 +203,41 @@ async def run_issue(
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content={"agent_run_id": run_id, "status": "running"},
+    )
+
+
+@app.post(
+    "/v1/friday-drop",
+    summary="Deliver the Friday surprise email for one user",
+)
+async def friday_drop(
+    request: Request,
+    x_pipeline_key: str | None = Header(default=None, alias="X-Pipeline-Key"),
+):
+    """Render + send every pending Friday surprise for `user_id`.
+
+    Unlike /v1/run-issue, this runs synchronously — the work is small
+    (one or two emails per user, typically one), and the caller (Vercel
+    cron route) wants a real summary back so it can roll up alerts. No
+    background task. Resend rate limits permitting, the whole thing
+    finishes in under a few seconds.
+    """
+    _verify_pipeline_key(x_pipeline_key)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id = body.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id required",
+        )
+
+    summary = await deliver_friday_drops_for_user(user_id)
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=summary,
     )
