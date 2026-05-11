@@ -33,6 +33,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, StateGraph
 
 from agent.categorization import ScoredCandidate, categorize
+from agent.config import settings
 from agent.db import get_pool
 from agent.editor_note import generate_editor_note_live
 from agent.embedder import embed_texts
@@ -807,14 +808,157 @@ async def persist_issue_node(state: IssueState) -> dict:
 
 
 async def render_email_node(state: IssueState) -> dict:
-    """MJML render. Stub for happy-path; lands in Sprint Week 6."""
-    logger.info("[stub] render_email — Week 6 deliverable")
-    return {}
+    """Build the Sunday issue email.
+
+    Pulls the just-persisted issue (with its 4 non-withheld picks joined to
+    releases) from the DB so we render off the canonical row rather than
+    state — keeps the HTML aligned with what /issue/[n] will show. The
+    rendered HTML is both stored on state for send_email_node and persisted
+    to issues.email_html so the archive can replay any past email.
+
+    The withheld pick is excluded by the template itself (Friday's email
+    will surface it).
+    """
+    from mjml import mjml_to_html
+
+    from agent.email_template import build_issue_mjml
+
+    run_id = state["agent_run_id"]
+    issue_id = state.get("issue_id")
+    if not issue_id:
+        logger.info("render_email: no issue_id on state — skipping")
+        return {}
+
+    await update_agent_run(run_id, current_step="rendering_email")
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        issue_row = await conn.fetchrow(
+            """
+            SELECT issue_number, publish_date::text AS publish_date,
+                   title, editor_note
+              FROM issues
+             WHERE id = $1::uuid
+            """,
+            issue_id,
+        )
+        if issue_row is None:
+            logger.warning("render_email: issue %s vanished — skipping", issue_id)
+            return {}
+
+        rec_rows = await conn.fetch(
+            """
+            SELECT r.position, r.category::text AS category, r.source_attr,
+                   r.prose, rel.artist, rel.title AS release_title
+              FROM recommendations r
+              JOIN releases rel ON rel.id = r.release_id
+             WHERE r.issue_id = $1::uuid
+             ORDER BY r.position
+            """,
+            issue_id,
+        )
+
+    issue_payload = {
+        "issue_number": issue_row["issue_number"],
+        "publish_date": issue_row["publish_date"],
+        "title": issue_row["title"],
+        "editor_note": issue_row["editor_note"],
+        "recommendations": [dict(r) for r in rec_rows],
+    }
+
+    try:
+        mjml_source = build_issue_mjml(issue_payload)
+        result = mjml_to_html(mjml_source)
+    except Exception as e:
+        logger.error("render_email: MJML render failed: %s", e)
+        return {}
+
+    html_body = getattr(result, "html", None) or (
+        result.get("html") if isinstance(result, dict) else None
+    )
+    errors = getattr(result, "errors", None) or (
+        result.get("errors") if isinstance(result, dict) else None
+    )
+    if errors:
+        # mjml-python returns warnings here too — log but don't bail
+        logger.info("render_email: %d MJML warnings: %s", len(errors), errors[:3])
+    if not html_body:
+        logger.error("render_email: renderer returned no html")
+        return {}
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE issues SET email_html = $1 WHERE id = $2::uuid",
+            html_body, issue_id,
+        )
+    logger.info("render_email: %d bytes persisted to issues.email_html", len(html_body))
+    return {"email_html": html_body}
 
 
 async def send_email_node(state: IssueState) -> dict:
-    """Resend send. Stub for happy-path; lands in Sprint Week 6."""
-    logger.info("[stub] send_email — Week 6 deliverable")
+    """Resend send + flip the issue's status to delivered.
+
+    Skips silently when RESEND_API_KEY is unset (CI / local dev) or the
+    issue has no rendered HTML on state. Flipping to 'delivered' is gated
+    on a successful Resend response — partial delivery (rendered but not
+    sent) stays at 'draft' / 'published' so a retry is possible.
+    """
+    import resend
+
+    run_id = state["agent_run_id"]
+    issue_id = state.get("issue_id")
+    html_body = state.get("email_html")
+    if not (issue_id and html_body):
+        logger.info("send_email: nothing to send (issue_id=%r html_bytes=%s)",
+                    issue_id, len(html_body) if html_body else 0)
+        return {}
+
+    if not settings.resend_api_key:
+        logger.info("send_email: RESEND_API_KEY unset — skipping send")
+        return {}
+
+    await update_agent_run(run_id, current_step="sending_email")
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT u.email AS to_email, i.issue_number, i.title
+              FROM issues i
+              JOIN users u ON u.id = i.user_id
+             WHERE i.id = $1::uuid
+            """,
+            issue_id,
+        )
+    if row is None:
+        logger.warning("send_email: issue %s vanished — skipping", issue_id)
+        return {}
+
+    subject = f"Crate Digger — Issue {row['issue_number']}: {row['title']}"
+
+    resend.api_key = settings.resend_api_key
+    try:
+        sent = await asyncio.to_thread(
+            resend.Emails.send,
+            {
+                "from": settings.resend_from_address,
+                "to": [row["to_email"]],
+                "subject": subject,
+                "html": html_body,
+            },
+        )
+    except Exception as e:
+        logger.error("send_email: Resend send failed: %s", e)
+        return {}
+
+    email_id = (sent or {}).get("id") if isinstance(sent, dict) else getattr(sent, "id", None)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE issues SET status = 'delivered' WHERE id = $1::uuid",
+            issue_id,
+        )
+    logger.info("send_email: %s delivered to %s (resend id=%s)",
+                issue_id, row["to_email"], email_id)
     return {}
 
 
