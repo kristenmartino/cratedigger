@@ -12,10 +12,11 @@ from __future__ import annotations
 import logging
 from urllib.parse import urljoin
 
-import httpx
 from selectolax.parser import HTMLParser, Node
 
 from agent.config import settings
+from agent.sources._debug import log_no_cards_diagnostic
+from agent.sources._http import IMPERSONATE, AsyncSession
 from agent.sources.rss import RawRelease
 
 logger = logging.getLogger("cratedigger-agent.sources.bleep")
@@ -89,10 +90,10 @@ async def scrape_bleep() -> list[RawRelease]:
     """Scrape Bleep's new-releases listing. Returns RawReleases."""
     headers = {"User-Agent": settings.crawler_user_agent}
     try:
-        async with httpx.AsyncClient(
-            timeout=20.0, headers=headers, follow_redirects=True
+        async with AsyncSession(
+            timeout=20.0, headers=headers, impersonate=IMPERSONATE
         ) as http:
-            resp = await http.get(BASE_URL + INDEX_PATH)
+            resp = await http.get(BASE_URL + INDEX_PATH, allow_redirects=True)
             resp.raise_for_status()
             html = resp.text
     except Exception as e:
@@ -108,7 +109,7 @@ async def scrape_bleep() -> list[RawRelease]:
             break
 
     if not cards:
-        logger.warning("Bleep: no product cards found — selectors may have drifted")
+        log_no_cards_diagnostic(logger, "bleep", html)
         return []
 
     out: list[RawRelease] = []

@@ -43,6 +43,7 @@ from agent.runs import (
     mark_completed,
     update_agent_run,
 )
+from agent.extract import extract_releases
 from agent.scoring import derive_matched_signals, score_release
 from agent.sources import SCRAPERS
 from agent.sources.rss import RawRelease, fetch_all_rss_sources, normalize
@@ -200,6 +201,48 @@ async def ingest_sources_node(state: IssueState) -> dict:
     # Pass through dataclass-as-dict so LangGraph's serializer is happy.
     raw_dicts = [asdict(r) for r in raw]
     return {"sources": sources, "raw_releases": raw_dicts}
+
+
+async def extract_artist_title_node(state: IssueState) -> dict:
+    """LLM-extract (artist, title) for entries that came in with no artist.
+
+    Magazine RSS feeds (Pitchfork, Stereogum, FACT, Crack, parts of L&Q)
+    deliver article headlines, not release-shaped titles. Without this step,
+    normalize_releases_node drops every empty-artist entry — silently losing
+    ~200 entries per crawl. Here we ask Claude Haiku to classify each
+    headline as release-vs-news and pull artist + title for the releases.
+
+    Entries that already have an artist (release-shaped feeds: ACL, Aquarium
+    Drunkard, Bandcamp Daily releases, Hardwax, RA) skip the LLM entirely.
+    Cost is proportional to the empty-artist count — ~$0.05 per crawl.
+    """
+    run_id = state["agent_run_id"]
+    await update_agent_run(run_id, current_step="extracting", current_source=None)
+
+    raw = state.get("raw_releases", [])
+    if not raw:
+        return {"raw_releases": []}
+
+    needs_extraction = [r for r in raw if not (r.get("artist") or "").strip()]
+    already_clean = [r for r in raw if (r.get("artist") or "").strip()]
+
+    if not needs_extraction:
+        logger.info("extract_artist_title: all %d entries already have artist; skipping LLM", len(raw))
+        return {"raw_releases": raw}
+
+    logger.info(
+        "extract_artist_title: %d entries already release-shaped, %d need LLM extraction",
+        len(already_clean), len(needs_extraction),
+    )
+
+    enriched = await extract_releases(needs_extraction)
+    kept = [e for e in enriched if e.get("is_release")]
+    logger.info(
+        "extract_artist_title: kept %d / %d as releases, dropped %d as news",
+        len(kept), len(needs_extraction), len(needs_extraction) - len(kept),
+    )
+
+    return {"raw_releases": already_clean + kept}
 
 
 async def normalize_releases_node(state: IssueState) -> dict:
@@ -778,6 +821,7 @@ def build_issue_graph():
     g = StateGraph(IssueState)
 
     g.add_node("ingest_sources", ingest_sources_node)
+    g.add_node("extract_artist_title", extract_artist_title_node)
     g.add_node("normalize_releases", normalize_releases_node)
     g.add_node("embed_releases", embed_releases_node)
     g.add_node("score_for_user", score_for_user_node)
@@ -790,7 +834,8 @@ def build_issue_graph():
     g.add_node("send_email", send_email_node)
 
     g.set_entry_point("ingest_sources")
-    g.add_edge("ingest_sources", "normalize_releases")
+    g.add_edge("ingest_sources", "extract_artist_title")
+    g.add_edge("extract_artist_title", "normalize_releases")
     g.add_edge("normalize_releases", "embed_releases")
     g.add_edge("embed_releases", "score_for_user")
     g.add_edge("score_for_user", "categorize_picks")

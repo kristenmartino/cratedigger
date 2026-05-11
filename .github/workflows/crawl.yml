@@ -1,0 +1,67 @@
+name: crawl check
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "One source slug (leave empty for all)"
+        required: false
+        default: ""
+      filter:
+        description: "Filter scope"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - rss-only
+          - scrape-only
+  push:
+    paths:
+      - ".github/workflows/crawl.yml"
+      - "services/agent/data/sources.json"
+      - "services/agent/agent/sources/**"
+      - "services/agent/scripts/crawl_check.py"
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: services/agent
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+          cache-dependency-path: services/agent/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run crawl check
+        env:
+          SLUG: ${{ github.event.inputs.slug }}
+          FILTER: ${{ github.event.inputs.filter }}
+        run: |
+          set -e
+          ARGS=""
+          if [ -n "$SLUG" ]; then
+            ARGS="$SLUG"
+          fi
+          case "$FILTER" in
+            rss-only)    ARGS="$ARGS --rss-only" ;;
+            scrape-only) ARGS="$ARGS --scrape-only" ;;
+          esac
+          echo "Running: python scripts/crawl_check.py $ARGS"
+          python scripts/crawl_check.py $ARGS 2>&1 | tee /tmp/crawl.out
+          {
+            echo '## Crawl check'
+            echo
+            echo '```'
+            cat /tmp/crawl.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
