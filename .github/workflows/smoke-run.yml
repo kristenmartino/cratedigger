@@ -1,0 +1,102 @@
+name: smoke run (agent)
+
+# Fires POST /v1/run-issue on the deployed Railway agent. Triggers one full
+# pipeline run for a user — ingest → extract → normalize → embed → score →
+# categorize → prose → quote → editor note → persist → render → send.
+#
+# Manual-only (workflow_dispatch). Path triggers are intentionally NOT wired
+# because every run spends Anthropic + Voyage tokens and sends an email.
+#
+# Required repo secrets:
+#   AGENT_URL           — e.g. https://cratedigger-agent-production.up.railway.app
+#   PIPELINE_API_KEY    — same value as on the Railway agent service
+#
+# After the workflow returns, the pipeline keeps running in the background
+# on Railway. Watch progress by querying the agent_runs row by the printed
+# agent_run_id, or by tailing Railway logs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: "Clerk-mapped UUID of the user to generate an issue for"
+        required: true
+        type: string
+      force:
+        description: "Bypass the duplicate-publish-date guard"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /v1/run-issue
+        env:
+          AGENT_URL: ${{ secrets.AGENT_URL }}
+          PIPELINE_KEY: ${{ secrets.PIPELINE_API_KEY }}
+          USER_ID: ${{ github.event.inputs.user_id }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          set -eu
+
+          if [ -z "${AGENT_URL:-}" ]; then
+            echo "::error::AGENT_URL repo secret is not set"
+            exit 1
+          fi
+          if [ -z "${PIPELINE_KEY:-}" ]; then
+            echo "::error::PIPELINE_API_KEY repo secret is not set"
+            exit 1
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg uid "$USER_ID" \
+            --argjson force "$FORCE" \
+            '{user_id: $uid, force: $force}')
+          echo "Posting payload: $PAYLOAD"
+          echo "Target: $AGENT_URL/v1/run-issue"
+
+          # Capture body + status separately so we can fail loudly on non-2xx
+          # while still showing the response.
+          HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$AGENT_URL/v1/run-issue" \
+            -H "Content-Type: application/json" \
+            -H "X-Pipeline-Key: $PIPELINE_KEY" \
+            -d "$PAYLOAD")
+
+          echo "HTTP $HTTP_CODE"
+          echo "Response body:"
+          cat /tmp/resp.json
+          echo
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Non-2xx response from agent"
+            exit 1
+          fi
+
+          AGENT_RUN_ID=$(jq -r '.agent_run_id // .run_id // empty' < /tmp/resp.json)
+          if [ -z "$AGENT_RUN_ID" ]; then
+            echo "::warning::Response did not include agent_run_id / run_id"
+            AGENT_RUN_ID="(not in response)"
+          fi
+
+          {
+            echo '## Smoke run triggered'
+            echo
+            echo "- **agent_run_id:** \`$AGENT_RUN_ID\`"
+            echo "- **user_id:** \`$USER_ID\`"
+            echo "- **force:** $FORCE"
+            echo "- **agent:** \`$AGENT_URL\`"
+            echo
+            echo 'Pipeline is now running in the background on Railway.'
+            echo 'Watch progress via:'
+            echo "- Supabase \`agent_runs\` row (\`id = '$AGENT_RUN_ID'\`)"
+            echo '- Railway logs for the agent service'
+            echo
+            echo '### Full response'
+            echo '```json'
+            jq . < /tmp/resp.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
