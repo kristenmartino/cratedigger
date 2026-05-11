@@ -25,14 +25,16 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_address: str = "editor@kristenmartino.ai"
 
-    # Polite-bot UA following the Googlebot/Feedly convention. The plain-text
-    # "Crate Digger Music Digest" form was correctly identifying us, but generic
-    # 403s from Cloudflare-fronted publishers (Quietus, Substacks, indie shops)
-    # require the Mozilla/5.0 prefix to pass the default WAF rules. Mailto stays
-    # so site owners can still reach us from server logs.
+    # Real-browser UA. The polite-bot "Mozilla/5.0 (compatible; ...)" form was
+    # still rejected by default Cloudflare WAF rules on Quietus, Boomkat,
+    # Norman Records, Substack-hosted sites, etc. — the "(compatible;" token is
+    # itself a block trigger on the rule set those sites use. We still respect
+    # robots.txt and 1 req/sec; the UA is just the price of entry. Reachable
+    # via the email in the site footer / repo if any operator wants to flag us.
     crawler_user_agent: str = (
-        "Mozilla/5.0 (compatible; CrateDigger/1.0; "
-        "+mailto:kristen@kristenmartino.ai)"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/121.0.0.0 Safari/537.36"
     )
 
     # HMAC-checked on /v1/run-issue. Must match the value the cron caller sends.

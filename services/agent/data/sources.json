@@ -84,7 +84,7 @@
     "name": "The Wire",
     "slug": "the-wire",
     "ingest_method": "rss",
-    "ingest_url": "https://www.thewire.co.uk/news/feed",
+    "ingest_url": "https://www.thewire.co.uk/feed",
     "default_weight": 0.95,
     "genre_affinity": ["experimental", "avant-garde", "jazz", "improvisation"],
     "active": true
