@@ -225,11 +225,18 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     releases_scanned        INTEGER NOT NULL DEFAULT 0,
     candidates_considered   INTEGER NOT NULL DEFAULT 0,
     records_surfaced        INTEGER NOT NULL DEFAULT 0,
+    releases_dropped_as_news INTEGER NOT NULL DEFAULT 0,
     notes                   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_runs_status_started
     ON agent_runs(status, started_at DESC);
+
+-- Idempotent column adds for DBs that pre-date the CREATE-TABLE additions
+-- above. init.sql is rerun on every deploy; ADD COLUMN IF NOT EXISTS is a
+-- no-op once the column is present.
+ALTER TABLE agent_runs
+    ADD COLUMN IF NOT EXISTS releases_dropped_as_news INTEGER NOT NULL DEFAULT 0;
 
 -- ── api_batches ───────────────────────────────────────────────────────────
 
