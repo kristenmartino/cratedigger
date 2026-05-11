@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     crawler_user_agent: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/121.0.0.0 Safari/537.36"
+        "Chrome/131.0.0.0 Safari/537.36"
     )
 
     # HMAC-checked on /v1/run-issue. Must match the value the cron caller sends.

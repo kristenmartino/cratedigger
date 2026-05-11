@@ -21,6 +21,9 @@ from curl_cffi.requests import AsyncSession
 
 # Matches the User-Agent we set in config.crawler_user_agent. Keep these in
 # sync — sites that compare UA against TLS fingerprint will 403 a mismatch.
-IMPERSONATE = "chrome120"
+# chrome131 is the freshest fingerprint shipped with curl_cffi 0.10.x — newer
+# than the chrome120 default, so less likely to be in stale scraper-detection
+# fingerprint databases.
+IMPERSONATE = "chrome131"
 
 __all__ = ["AsyncSession", "IMPERSONATE"]
