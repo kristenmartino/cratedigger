@@ -44,7 +44,7 @@ from agent.runs import (
     update_agent_run,
 )
 from agent.scoring import derive_matched_signals, score_release
-from agent.sources import SCRAPERS, get_api_fetcher
+from agent.sources import SCRAPERS
 from agent.sources.rss import RawRelease, fetch_all_rss_sources, normalize
 
 logger = logging.getLogger("cratedigger-agent.workflows.issue")
@@ -183,26 +183,6 @@ async def ingest_sources_node(state: IssueState) -> dict:
             raw.extend(await scraper())
         except Exception as e:
             logger.error("Scraper for %s raised: %s", s["slug"], e)
-        await increment_counters(run_id, sources_scanned=1)
-
-    # ingest_method="api" sources. Each entry is routed to a fetcher by URL
-    # host (see API_FETCHERS in agent/sources/__init__.py). Today: Reddit.
-    for s in sources:
-        if s["ingest_method"] != "api":
-            continue
-        await update_agent_run(run_id, current_source=s["slug"])
-        fetcher = get_api_fetcher(s["ingest_url"])
-        if fetcher is None:
-            logger.warning(
-                "No API fetcher matched ingest_url %r for source %r",
-                s["ingest_url"], s["slug"],
-            )
-            await increment_counters(run_id, sources_scanned=1)
-            continue
-        try:
-            raw.extend(await fetcher(s["slug"], s["ingest_url"]))
-        except Exception as e:
-            logger.error("API fetcher for %s raised: %s", s["slug"], e)
         await increment_counters(run_id, sources_scanned=1)
 
     # Touch last_crawled_at for everything we tried.

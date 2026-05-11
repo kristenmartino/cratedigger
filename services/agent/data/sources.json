@@ -162,42 +162,6 @@
     "active": false
   },
   {
-    "name": "r/listentothis (top week)",
-    "slug": "reddit-listentothis",
-    "ingest_method": "api",
-    "ingest_url": "https://www.reddit.com/r/listentothis",
-    "default_weight": 0.65,
-    "genre_affinity": ["indie", "rock", "alternative", "experimental"],
-    "active": true
-  },
-  {
-    "name": "r/electronicmusic (top week)",
-    "slug": "reddit-electronicmusic",
-    "ingest_method": "api",
-    "ingest_url": "https://www.reddit.com/r/electronicmusic",
-    "default_weight": 0.55,
-    "genre_affinity": ["electronic", "house", "techno"],
-    "active": true
-  },
-  {
-    "name": "r/idm (top week)",
-    "slug": "reddit-idm",
-    "ingest_method": "api",
-    "ingest_url": "https://www.reddit.com/r/idm",
-    "default_weight": 0.7,
-    "genre_affinity": ["IDM", "experimental-electronic", "ambient"],
-    "active": true
-  },
-  {
-    "name": "r/ambientmusic (top week)",
-    "slug": "reddit-ambientmusic",
-    "ingest_method": "api",
-    "ingest_url": "https://www.reddit.com/r/ambientmusic",
-    "default_weight": 0.65,
-    "genre_affinity": ["ambient", "drone", "modern-classical"],
-    "active": true
-  },
-  {
     "name": "Brainwashed",
     "slug": "brainwashed",
     "ingest_method": "rss",

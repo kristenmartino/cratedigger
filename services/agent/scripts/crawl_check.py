@@ -27,7 +27,7 @@ from pathlib import Path
 # Make the agent package importable when running this file directly
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agent.sources import SCRAPERS, get_api_fetcher  # noqa: E402
+from agent.sources import SCRAPERS  # noqa: E402
 from agent.sources.rss import RawRelease, fetch_rss  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -68,19 +68,6 @@ async def crawl_one(source: dict) -> SourceResult:
                     error=f"no scraper registered for slug {slug!r}",
                 )
             releases = await scraper()
-        elif source["ingest_method"] == "api":
-            fetcher = get_api_fetcher(source["ingest_url"])
-            if fetcher is None:
-                return SourceResult(
-                    slug=slug,
-                    name=source["name"],
-                    method=source["ingest_method"],
-                    elapsed_s=0.0,
-                    count=0,
-                    samples=[],
-                    error=f"no api fetcher matched url {source['ingest_url']!r}",
-                )
-            releases = await fetcher(slug, source["ingest_url"])
         else:
             return SourceResult(
                 slug=slug,
