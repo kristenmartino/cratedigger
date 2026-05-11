@@ -46,6 +46,10 @@ jobs:
         env:
           SLUG: ${{ github.event.inputs.slug }}
           FILTER: ${{ github.event.inputs.filter }}
+          # Optional. Set these as repo secrets to enable Reddit "api"
+          # sources. If unset, those sources skip silently.
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: |
           set -e
           ARGS=""

@@ -164,8 +164,8 @@
   {
     "name": "r/listentothis (top week)",
     "slug": "reddit-listentothis",
-    "ingest_method": "rss",
-    "ingest_url": "https://www.reddit.com/r/listentothis/top.rss?t=week&limit=50",
+    "ingest_method": "api",
+    "ingest_url": "https://www.reddit.com/r/listentothis",
     "default_weight": 0.65,
     "genre_affinity": ["indie", "rock", "alternative", "experimental"],
     "active": true
@@ -173,8 +173,8 @@
   {
     "name": "r/electronicmusic (top week)",
     "slug": "reddit-electronicmusic",
-    "ingest_method": "rss",
-    "ingest_url": "https://www.reddit.com/r/electronicmusic/top.rss?t=week&limit=50",
+    "ingest_method": "api",
+    "ingest_url": "https://www.reddit.com/r/electronicmusic",
     "default_weight": 0.55,
     "genre_affinity": ["electronic", "house", "techno"],
     "active": true
@@ -182,8 +182,8 @@
   {
     "name": "r/idm (top week)",
     "slug": "reddit-idm",
-    "ingest_method": "rss",
-    "ingest_url": "https://www.reddit.com/r/idm/top.rss?t=week&limit=50",
+    "ingest_method": "api",
+    "ingest_url": "https://www.reddit.com/r/idm",
     "default_weight": 0.7,
     "genre_affinity": ["IDM", "experimental-electronic", "ambient"],
     "active": true
@@ -191,8 +191,8 @@
   {
     "name": "r/ambientmusic (top week)",
     "slug": "reddit-ambientmusic",
-    "ingest_method": "rss",
-    "ingest_url": "https://www.reddit.com/r/ambientmusic/top.rss?t=week&limit=50",
+    "ingest_method": "api",
+    "ingest_url": "https://www.reddit.com/r/ambientmusic",
     "default_weight": 0.65,
     "genre_affinity": ["ambient", "drone", "modern-classical"],
     "active": true
@@ -204,7 +204,7 @@
     "ingest_url": "https://brainwashed.com/feed/",
     "default_weight": 0.85,
     "genre_affinity": ["experimental", "avant-garde", "industrial", "drone"],
-    "active": true
+    "active": false
   },
   {
     "name": "Fluid Radio",
@@ -213,6 +213,6 @@
     "ingest_url": "https://fluid-radio.co.uk/feed/",
     "default_weight": 0.75,
     "genre_affinity": ["ambient", "post-classical", "experimental", "drone"],
-    "active": true
+    "active": false
   }
 ]

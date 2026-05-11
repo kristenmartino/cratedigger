@@ -37,6 +37,12 @@ class Settings(BaseSettings):
         "Chrome/131.0.0.0 Safari/537.36"
     )
 
+    # Reddit "script app" OAuth credentials. Create an app of type "script" at
+    # https://www.reddit.com/prefs/apps to get these. Without them, sources
+    # with ingest_method="api" pointing at reddit.com will skip silently.
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+
     # HMAC-checked on /v1/run-issue. Must match the value the cron caller sends.
     pipeline_api_key: str = "dev-key"
 
