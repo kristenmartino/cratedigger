@@ -14,10 +14,10 @@ import logging
 import re
 from urllib.parse import urljoin
 
-import httpx
 from selectolax.parser import HTMLParser, Node
 
 from agent.config import settings
+from agent.sources._http import IMPERSONATE, AsyncSession
 from agent.sources.rss import RawRelease
 
 logger = logging.getLogger("cratedigger-agent.sources.resident_advisor")
@@ -151,8 +151,10 @@ def _from_dom(html: str) -> list[RawRelease]:
 async def scrape_resident_advisor() -> list[RawRelease]:
     headers = {"User-Agent": settings.crawler_user_agent}
     try:
-        async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True) as http:
-            resp = await http.get(BASE_URL + INDEX_PATH)
+        async with AsyncSession(
+            timeout=20.0, headers=headers, impersonate=IMPERSONATE
+        ) as http:
+            resp = await http.get(BASE_URL + INDEX_PATH, allow_redirects=True)
             resp.raise_for_status()
             html = resp.text
     except Exception as e:

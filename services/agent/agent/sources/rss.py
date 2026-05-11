@@ -21,9 +21,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import feedparser
-import httpx
 
 from agent.config import settings
+from agent.sources._http import IMPERSONATE, AsyncSession
 
 logger = logging.getLogger("cratedigger-agent.sources.rss")
 
@@ -128,10 +128,10 @@ async def fetch_rss(source_slug: str, url: str) -> list[RawRelease]:
         ),
     }
     try:
-        async with httpx.AsyncClient(
-            timeout=20.0, headers=headers, follow_redirects=True
+        async with AsyncSession(
+            timeout=20.0, headers=headers, impersonate=IMPERSONATE
         ) as http:
-            resp = await http.get(url)
+            resp = await http.get(url, allow_redirects=True)
             resp.raise_for_status()
             body = resp.content
     except Exception as e:
