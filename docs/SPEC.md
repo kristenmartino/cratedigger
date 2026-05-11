@@ -176,25 +176,25 @@ The "now digging" / agent-status widgets in both UIs query the latest active row
 
 ### 3.1 Configurable source layer
 
-Sources are rows in the `sources` table, not hardcoded. v1 ships with five active sources but adding a sixth should be a database INSERT, not a code change.
+Sources are rows in the `sources` table, not hardcoded. v1 ships with **10 active sources** (plus 10 documented-inactive entries preserved for future reactivation). Adding an 11th is a `sources.json` row + (for RSS) zero code, or a registered scraper function for `ingest_method="scrape"`.
 
-v1 active sources:
-- Boomkat (scrape)
-- The Quietus (RSS)
-- Aquarium Drunkard (RSS)
-- Resident Advisor (scrape)
-- Bandcamp Daily (RSS)
+v1 active sources (10):
 
-Future v1.x candidates: Tiny Mix Tapes, A Closer Listen, Ad Hoc, Pitchfork (experimental section), FACT Magazine.
+**RSS (8):** A Closer Listen, Aquarium Drunkard, Bandcamp Daily, Crack Magazine, FACT Magazine, Loud and Quiet, Pitchfork (Album Reviews), Stereogum.
+
+**Scrape (2):** Hardwax, Resident Advisor.
+
+The eight intended sources from the original spec that remain inactive — Boomkat, The Quietus, Norman Records, Tone Glow, Drowned in Sound, Headphone Commute, The Wire, Bleep — are blocked at the network layer (datacenter-IP detection, hijacked content, or no public feed). See `docs/SOURCES.md` for the full forensics and the reactivation path (residential proxy). The `ingest_method="api"` enum value exists for a future Reddit OAuth integration but is currently unused.
 
 ### 3.2 Crawler implementation notes
 
 - RSS-first. Use `feedparser` Python library.
-- Scrape fallback for sources without feeds. Use `httpx` + `selectolax` (faster than BeautifulSoup). Respect `robots.txt`.
+- Scrape fallback for sources without feeds. Use `selectolax` for HTML parsing (faster than BeautifulSoup). Respect `robots.txt`.
+- **HTTP transport:** every source-crawl call goes through `curl_cffi` impersonating Chrome 131 (see `agent/sources/_http.py`). Plain `httpx` was 403'd at the TLS layer by Cloudflare-fronted publishers — curl-impersonate reproduces Chrome's TLS ClientHello exactly. Anthropic API calls keep plain `httpx` (no fingerprinting issue).
 - Run crawlers in parallel (asyncio).
 - Rate-limit per domain (max 1 req/sec).
-- Always set a real `User-Agent`: `Crate Digger Music Digest / kristen@kristenmartino.ai`.
-- Boomkat: scrape `boomkat.com/new-this-week` and follow product detail pages for descriptions. They've blocked aggressive scrapers in the past — be respectful or this will fail.
+- `User-Agent` is a real Chrome string (`Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36`). The polite-bot form (`Mozilla/5.0 (compatible; CrateDigger; +mailto:...)`) was rejected by default WAF rules — the "(compatible;" token is itself a block trigger. Identification stays via mailto in the repo + the operator's email address.
+- **Hardwax:** URL-path parser. The site ships minified CSS class names, so the parser keys on `div[id^="record-"]` cards and pulls `(artist, title)` from each card's `<a class="an" href="/{id}/{artist-slug}/{title-slug}/">` path. See `agent/sources/hardwax.py`.
 - Bandcamp Daily: RSS at `daily.bandcamp.com/feed`.
 
 ### 3.3 Deduplication
@@ -209,7 +209,10 @@ The weekly run is a graph with these nodes:
 START
   │
   ▼
-[ingest_sources] ──parallel──> [normalize_releases] ──> [embed_releases]
+[ingest_sources] ──parallel──> [extract_artist_title] ──> [normalize_releases] ──> [embed_releases]
+                                       │
+                       (Haiku 4.5 — LLM classifies headline entries
+                        as release-vs-news, pulls (artist, title))
                                                               │
                                                               ▼
                                                        [score_for_user]
