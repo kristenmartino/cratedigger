@@ -87,7 +87,7 @@
     "ingest_url": "https://www.thewire.co.uk/feed",
     "default_weight": 0.95,
     "genre_affinity": ["experimental", "avant-garde", "jazz", "improvisation"],
-    "active": true
+    "active": false
   },
   {
     "name": "Tone Glow",

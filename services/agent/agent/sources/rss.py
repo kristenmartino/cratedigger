@@ -66,6 +66,56 @@ def stable_hash(s: str) -> str:
     return hashlib.blake2b(s.encode("utf-8"), digest_size=12).hexdigest()
 
 
+# ── Title → (artist, release_title) heuristic ────────────────────────────
+#
+# Each magazine RSS feed encodes (artist, title) differently in the entry
+# headline. Live samples observed in the first crawl runs:
+#
+#   A Closer Listen      "SHHE ~ THALASSA"                    → ~
+#   Aquarium Drunkard    "Setting :: S/T"                     → ::
+#   Bandcamp Daily       'Aldous Harding, "Train On The Island"'   → comma + quotes
+#   Boomkat / RA / etc.  "Artist — Title" / "Artist - Title"  → em-dash / hyphen
+#
+# News-headline feeds (Pitchfork, Stereogum, FACT, Crack Magazine) don't
+# follow any of these — articles like "Spellbound Festival announces 2026
+# programme" aren't release-shaped at all. For those, parse_release_title
+# returns ("", title) and the downstream pipeline decides what to do
+# (extraction via LLM is a separate workstream).
+#
+# Order matters: the BD quoted-title pattern is checked before the comma-
+# split so that headlines containing an incidental comma ("…on Bandcamp,
+# April 2026") aren't mis-split into a fake artist.
+
+_SEPARATORS: tuple[str, ...] = (" — ", " – ", " ~ ", " :: ", " - ")
+
+_QUOTE_OPEN = "“"   # left double curly quote
+_QUOTE_CLOSE = "”"  # right double curly quote
+_QUOTED_TITLE_RE = re.compile(
+    rf'^(?P<artist>.+?),\s+["{_QUOTE_OPEN}](?P<title>[^"{_QUOTE_CLOSE}]+)["{_QUOTE_CLOSE}]\s*$'
+)
+
+
+def parse_release_title(title: str) -> tuple[str, str]:
+    """Split a feed entry title into (artist, release_title).
+
+    Returns ("", title) if no recognized release pattern matches — the entry
+    is probably a news headline or feature article, not a release line.
+    """
+    if not title:
+        return "", title
+
+    m = _QUOTED_TITLE_RE.match(title)
+    if m:
+        return m["artist"].strip(), m["title"].strip()
+
+    for sep in _SEPARATORS:
+        if sep in title:
+            head, _, tail = title.partition(sep)
+            return head.strip(), tail.strip()
+
+    return "", title
+
+
 # ── RSS fetcher ──────────────────────────────────────────────────────────
 
 async def fetch_rss(source_slug: str, url: str) -> list[RawRelease]:
@@ -94,16 +144,7 @@ async def fetch_rss(source_slug: str, url: str) -> list[RawRelease]:
         title = (entry.get("title") or "").strip()
         if not title:
             continue
-        # Heuristic: "Artist — Title" or "Artist - Title". Fall back to whole title.
-        artist, sep, rest = title.partition(" — ")
-        if not sep:
-            artist, sep, rest = title.partition(" - ")
-        if sep:
-            release_title = rest.strip()
-            release_artist = artist.strip()
-        else:
-            release_artist = ""
-            release_title = title
+        release_artist, release_title = parse_release_title(title)
 
         link = entry.get("link") or ""
         description = (entry.get("summary") or entry.get("description") or "").strip()
