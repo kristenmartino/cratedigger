@@ -16,11 +16,17 @@ on:
           - all
           - rss-only
           - scrape-only
+      extract:
+        description: "Run the LLM extraction pass on empty-artist entries"
+        required: false
+        default: false
+        type: boolean
   push:
     paths:
       - ".github/workflows/crawl.yml"
       - "services/agent/data/sources.json"
       - "services/agent/agent/sources/**"
+      - "services/agent/agent/extract.py"
       - "services/agent/scripts/crawl_check.py"
 
 jobs:
@@ -46,6 +52,11 @@ jobs:
         env:
           SLUG: ${{ github.event.inputs.slug }}
           FILTER: ${{ github.event.inputs.filter }}
+          EXTRACT: ${{ github.event.inputs.extract }}
+          # Optional: set this as a repo secret to enable --extract from
+          # workflow_dispatch. Without it, the LLM extraction step warns
+          # and short-circuits — no error.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           set -e
           ARGS=""
@@ -56,6 +67,9 @@ jobs:
             rss-only)    ARGS="$ARGS --rss-only" ;;
             scrape-only) ARGS="$ARGS --scrape-only" ;;
           esac
+          if [ "$EXTRACT" = "true" ]; then
+            ARGS="$ARGS --extract"
+          fi
           echo "Running: python scripts/crawl_check.py $ARGS"
           python scripts/crawl_check.py $ARGS 2>&1 | tee /tmp/crawl.out
           {
