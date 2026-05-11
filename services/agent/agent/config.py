@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_address: str = "editor@kristenmartino.ai"
 
+    # Destination inbox for failure alerts (cron route 5xx, agent_run lands
+    # in 'failed' state). When unset, alerts skip silently — same gating as
+    # send_email_node. Set in Railway + Vercel env for production.
+    ops_alert_email: str = ""
+
     # Real-browser UA. The polite-bot "Mozilla/5.0 (compatible; ...)" form was
     # still rejected by default Cloudflare WAF rules on Quietus, Boomkat,
     # Norman Records, Substack-hosted sites, etc. — the "(compatible;" token is

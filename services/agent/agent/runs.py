@@ -98,3 +98,21 @@ async def mark_failed(run_id: str, error: str) -> None:
             """,
             run_id, error[:2000],
         )
+
+    # Fire an ops alert AFTER the DB write — if alerting itself fails, the
+    # 'failed' state is already persisted and the next operator log review
+    # will catch it. Import locally to avoid a circular dep at module load
+    # (agent.alerts → agent.config; agent.runs is imported early on).
+    from agent.alerts import send_failure_alert
+
+    await send_failure_alert(
+        subject=f"[Crate Digger] agent_run {run_id} failed",
+        body=(
+            f"agent_run_id: {run_id}\n"
+            f"\n"
+            f"error:\n{error}\n"
+            f"\n"
+            f"Inspect with:\n"
+            f"  SELECT * FROM agent_runs WHERE id = '{run_id}';\n"
+        ),
+    )
