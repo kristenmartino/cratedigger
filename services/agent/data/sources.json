@@ -6,7 +6,7 @@
     "ingest_url": "https://boomkat.com/new-this-week",
     "default_weight": 1.0,
     "genre_affinity": ["experimental-electronic", "dub-techno", "ambient", "IDM"],
-    "active": true
+    "active": false
   },
   {
     "name": "The Quietus",
@@ -15,7 +15,7 @@
     "ingest_url": "https://thequietus.com/feed.xml",
     "default_weight": 0.9,
     "genre_affinity": ["experimental", "longreads"],
-    "active": true
+    "active": false
   },
   {
     "name": "Aquarium Drunkard",
@@ -78,7 +78,7 @@
     "ingest_url": "https://www.normanrecords.com/en/this-week-only",
     "default_weight": 0.85,
     "genre_affinity": ["indie", "experimental", "ambient", "krautrock", "post-punk"],
-    "active": true
+    "active": false
   },
   {
     "name": "The Wire",
@@ -96,7 +96,7 @@
     "ingest_url": "https://toneglow.substack.com/feed",
     "default_weight": 0.85,
     "genre_affinity": ["experimental", "contemporary-classical", "ambient"],
-    "active": true
+    "active": false
   },
   {
     "name": "Crack Magazine",
@@ -114,7 +114,7 @@
     "ingest_url": "https://headphonecommute.com/feed/",
     "default_weight": 0.75,
     "genre_affinity": ["ambient", "modern-classical", "drone"],
-    "active": true
+    "active": false
   },
   {
     "name": "Stereogum",
@@ -141,7 +141,7 @@
     "ingest_url": "https://drownedinsound.substack.com/feed",
     "default_weight": 0.55,
     "genre_affinity": ["indie", "alternative", "post-rock"],
-    "active": true
+    "active": false
   },
   {
     "name": "Hardwax",
@@ -160,5 +160,59 @@
     "default_weight": 0.8,
     "genre_affinity": ["electronic", "experimental", "ambient", "indie"],
     "active": false
+  },
+  {
+    "name": "r/listentothis (top week)",
+    "slug": "reddit-listentothis",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.reddit.com/r/listentothis/top.rss?t=week&limit=50",
+    "default_weight": 0.65,
+    "genre_affinity": ["indie", "rock", "alternative", "experimental"],
+    "active": true
+  },
+  {
+    "name": "r/electronicmusic (top week)",
+    "slug": "reddit-electronicmusic",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.reddit.com/r/electronicmusic/top.rss?t=week&limit=50",
+    "default_weight": 0.55,
+    "genre_affinity": ["electronic", "house", "techno"],
+    "active": true
+  },
+  {
+    "name": "r/idm (top week)",
+    "slug": "reddit-idm",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.reddit.com/r/idm/top.rss?t=week&limit=50",
+    "default_weight": 0.7,
+    "genre_affinity": ["IDM", "experimental-electronic", "ambient"],
+    "active": true
+  },
+  {
+    "name": "r/ambientmusic (top week)",
+    "slug": "reddit-ambientmusic",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.reddit.com/r/ambientmusic/top.rss?t=week&limit=50",
+    "default_weight": 0.65,
+    "genre_affinity": ["ambient", "drone", "modern-classical"],
+    "active": true
+  },
+  {
+    "name": "Brainwashed",
+    "slug": "brainwashed",
+    "ingest_method": "rss",
+    "ingest_url": "https://brainwashed.com/feed/",
+    "default_weight": 0.85,
+    "genre_affinity": ["experimental", "avant-garde", "industrial", "drone"],
+    "active": true
+  },
+  {
+    "name": "Fluid Radio",
+    "slug": "fluid-radio",
+    "ingest_method": "rss",
+    "ingest_url": "https://fluid-radio.co.uk/feed/",
+    "default_weight": 0.75,
+    "genre_affinity": ["ambient", "post-classical", "experimental", "drone"],
+    "active": true
   }
 ]

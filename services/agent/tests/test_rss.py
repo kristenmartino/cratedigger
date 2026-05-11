@@ -21,6 +21,15 @@ def test_hyphen_separator():
     assert parse_release_title("Burial - Untrue") == ("Burial", "Untrue")
 
 
+def test_double_hyphen_reddit_listentothis():
+    """r/listentothis enforces "Artist -- Title [Genre, Year]" — the
+    double-hyphen pattern needs to win over the single hyphen."""
+    assert parse_release_title("Burial -- Untrue [IDM, 2007]") == (
+        "Burial",
+        "Untrue [IDM, 2007]",
+    )
+
+
 def test_tilde_separator_acl():
     assert parse_release_title("SHHE ~ THALASSA") == ("SHHE", "THALASSA")
 

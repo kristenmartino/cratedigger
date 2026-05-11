@@ -86,7 +86,14 @@ def stable_hash(s: str) -> str:
 # split so that headlines containing an incidental comma ("…on Bandcamp,
 # April 2026") aren't mis-split into a fake artist.
 
-_SEPARATORS: tuple[str, ...] = (" — ", " – ", " ~ ", " :: ", " - ")
+#   r/listentothis      "Burial -- Untrue [IDM, 2007]"       → -- (double-hyphen)
+#
+# Double-hyphen comes before single-hyphen in the precedence list because
+# titles like "Burial -- Untrue" should split on the longer separator first;
+# single-hyphen would never match anyway (it requires space-hyphen-space and
+# "Burial -- Untrue" doesn't contain that substring), but encoding the
+# priority makes the order explicit.
+_SEPARATORS: tuple[str, ...] = (" — ", " – ", " -- ", " ~ ", " :: ", " - ")
 
 _QUOTE_OPEN = "“"   # left double curly quote
 _QUOTE_CLOSE = "”"  # right double curly quote
