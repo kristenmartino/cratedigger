@@ -79,6 +79,8 @@ class IssueState(TypedDict, total=False):
     issue_title: str
     # Persistence
     issue_id: str
+    # Email
+    email_html: str
     # Diagnostics
     errors: list[str]
 
@@ -899,16 +901,28 @@ async def send_email_node(state: IssueState) -> dict:
     run_id = state["agent_run_id"]
     issue_id = state.get("issue_id")
     html_body = state.get("email_html")
+
+    # Update current_step FIRST so the agent_runs row reflects which node
+    # actually executed. Previous version returned early on missing inputs
+    # without updating, which made stalls look indistinguishable from
+    # "render_email never finished" — the bug that masked the state
+    # propagation issue in run c1dc3f26.
+    await update_agent_run(run_id, current_step="sending_email")
+
     if not (issue_id and html_body):
-        logger.info("send_email: nothing to send (issue_id=%r html_bytes=%s)",
-                    issue_id, len(html_body) if html_body else 0)
+        msg = (
+            f"send_email skipped: nothing to send "
+            f"(issue_id={issue_id!r} html_bytes={len(html_body) if html_body else 0})"
+        )
+        logger.info("send_email: %s", msg)
+        await update_agent_run(run_id, notes=msg)
         return {}
 
     if not settings.resend_api_key:
-        logger.info("send_email: RESEND_API_KEY unset — skipping send")
+        msg = "send_email skipped: RESEND_API_KEY unset"
+        logger.info("send_email: %s", msg)
+        await update_agent_run(run_id, notes=msg)
         return {}
-
-    await update_agent_run(run_id, current_step="sending_email")
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -922,7 +936,9 @@ async def send_email_node(state: IssueState) -> dict:
             issue_id,
         )
     if row is None:
-        logger.warning("send_email: issue %s vanished — skipping", issue_id)
+        msg = f"send_email skipped: issue {issue_id} vanished"
+        logger.warning("send_email: %s", msg)
+        await update_agent_run(run_id, notes=msg)
         return {}
 
     subject = f"Crate Digger — Issue {row['issue_number']}: {row['title']}"
