@@ -5,9 +5,9 @@ emails without shelling out to Node. Visual structure stays in sync with
 the TS template (same wordmark, same per-record block shape, same closing
 sign-off) — if you tweak one, mirror the other or both will drift.
 
-The renderer is mjml-python (`mjml_to_html`), already in requirements.txt
-at v1.4.0. The agent's render_email_node calls build_issue_mjml() and
-hands the resulting string to mjml_to_html.
+The renderer is mjml-python (in requirements.txt at v1.4.0). API shape
+varies across versions — see render_mjml() below for the defensive
+dispatch.
 
 This template intentionally drops the withheld pick — that one ships in
 Friday's surprise email, not Sunday's.
@@ -15,7 +15,79 @@ Friday's surprise email, not Sunday's.
 from __future__ import annotations
 
 import html
+import logging
 from typing import Any
+
+logger = logging.getLogger("cratedigger-agent.email_template")
+
+
+# ── MJML renderer wrapper ────────────────────────────────────────────────
+#
+# mjml-python's API has drifted across versions. Production logs at
+# v1.4.0 showed `cannot import name 'mjml_to_html' from 'mjml'`. Rather
+# than pin to a specific version and risk this again on the next bump,
+# we dispatch at runtime: try every known function-name shape, fall back
+# to a class-based call if any of those packages is what's installed.
+#
+# On total miss, we raise with the actual `dir(mjml)` output so the next
+# fix has a definitive answer instead of more guessing.
+
+_KNOWN_FN_NAMES = ("mjml_to_html", "mjml2html", "render", "to_html")
+
+
+def render_mjml(source: str) -> str:
+    """Render MJML source to HTML. Tolerates mjml-python API drift.
+
+    Returns the HTML body string. Raises RuntimeError on miss with a
+    diagnostic listing of what IS exported by the `mjml` package.
+    """
+    import mjml  # local import — module load shouldn't depend on the package
+
+    for fn_name in _KNOWN_FN_NAMES:
+        fn = getattr(mjml, fn_name, None)
+        if not callable(fn):
+            continue
+        try:
+            result = fn(source)
+        except Exception as e:
+            logger.warning("render_mjml: %s(...) raised %s — trying next API", fn_name, e)
+            continue
+        # Result shape also varies: namedtuple-like with .html, dict
+        # with 'html', or raw string.
+        html_body = (
+            getattr(result, "html", None)
+            or (result.get("html") if isinstance(result, dict) else None)
+            or (result if isinstance(result, str) else None)
+        )
+        if html_body:
+            logger.info("render_mjml: dispatched via mjml.%s", fn_name)
+            return html_body
+
+    # Class-based API (older mjml-python shapes)
+    klass = getattr(mjml, "MJML", None)
+    if klass is not None:
+        try:
+            inst = klass(source)
+            for method_name in ("to_html", "render", "html"):
+                method = getattr(inst, method_name, None)
+                if callable(method):
+                    out = method()
+                    if isinstance(out, str):
+                        logger.info("render_mjml: dispatched via mjml.MJML.%s", method_name)
+                        return out
+        except Exception as e:
+            logger.warning("render_mjml: mjml.MJML(...) raised %s", e)
+
+    # Nothing worked — surface the actual exported symbols so the next
+    # patch can target them exactly.
+    available = sorted(s for s in dir(mjml) if not s.startswith("_"))
+    raise RuntimeError(
+        f"No known MJML render function in mjml package. "
+        f"Tried: {list(_KNOWN_FN_NAMES) + ['MJML(...).to_html', '.render', '.html']}. "
+        f"Available exports: {available}"
+    )
+
+
 
 
 def build_issue_mjml(issue: dict[str, Any]) -> str:

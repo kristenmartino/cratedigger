@@ -109,16 +109,12 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
                 "source_attr": row["source_attr"],
                 "prose": row["prose"],
             })
-            # mjml-python's mjml_to_html is sync; wrap in to_thread to keep
-            # the event loop responsive when there's more than one drop.
-            from mjml import mjml_to_html  # local import: keeps module
-                                           # importable without the package
-            result = await asyncio.to_thread(mjml_to_html, mjml_source)
-            html_body = getattr(result, "html", None) or (
-                result.get("html") if isinstance(result, dict) else None
-            )
+            # Defensive MJML dispatch — see agent/email_template.render_mjml
+            # for why we don't pin to a specific function name.
+            from agent.email_template import render_mjml
+            html_body = await asyncio.to_thread(render_mjml, mjml_source)
             if not html_body:
-                raise RuntimeError("MJML render returned no html")
+                raise RuntimeError("MJML render returned empty html")
 
             subject = f"Crate Digger — Friday drop: {row['artist']}"
             send_payload = {
