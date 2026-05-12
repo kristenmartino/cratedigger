@@ -819,9 +819,7 @@ async def render_email_node(state: IssueState) -> dict:
     The withheld pick is excluded by the template itself (Friday's email
     will surface it).
     """
-    from mjml import mjml_to_html
-
-    from agent.email_template import build_issue_mjml
+    from agent.email_template import build_issue_mjml, render_mjml
 
     run_id = state["agent_run_id"]
     issue_id = state.get("issue_id")
@@ -868,22 +866,15 @@ async def render_email_node(state: IssueState) -> dict:
 
     try:
         mjml_source = build_issue_mjml(issue_payload)
-        result = mjml_to_html(mjml_source)
+        html_body = render_mjml(mjml_source)
     except Exception as e:
+        # Includes ImportError (wrong mjml API) and runtime render errors.
+        # render_mjml raises with the actual dir(mjml) listing on a miss,
+        # so this log line is the diagnostic.
         logger.error("render_email: MJML render failed: %s", e)
         return {}
-
-    html_body = getattr(result, "html", None) or (
-        result.get("html") if isinstance(result, dict) else None
-    )
-    errors = getattr(result, "errors", None) or (
-        result.get("errors") if isinstance(result, dict) else None
-    )
-    if errors:
-        # mjml-python returns warnings here too — log but don't bail
-        logger.info("render_email: %d MJML warnings: %s", len(errors), errors[:3])
     if not html_body:
-        logger.error("render_email: renderer returned no html")
+        logger.error("render_email: renderer returned empty html")
         return {}
 
     async with pool.acquire() as conn:
