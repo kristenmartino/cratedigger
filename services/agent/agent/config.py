@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_address: str = "editor@kristenmartino.ai"
 
+    # Public web app base URL. Used by the email template for the
+    # "Read in browser" anchor pointing at /issue/<n>. Defaults to the
+    # production domain; override locally for preview deploys.
+    app_base_url: str = "https://cratedigger.kristenmartino.ai"
+
     # Destination inbox for failure alerts (cron route 5xx, agent_run lands
     # in 'failed' state). When unset, alerts skip silently — same gating as
     # send_email_node. Set in Railway + Vercel env for production.
