@@ -1,0 +1,78 @@
+name: migrate db
+
+# Applies packages/db/init.sql to the production Neon DB.
+#
+# Triggers:
+#   - workflow_dispatch  — manual fire (after a schema change merge if
+#                          you want immediate application; otherwise
+#                          push-trigger below handles it)
+#   - push to main with changes to packages/db/init.sql — automatic
+#     migration on schema-source changes. No human "remember to run
+#     this SQL" step.
+#
+# Required repo secret:
+#   DATABASE_URL — the Neon connection string. Same one Railway uses.
+#
+# Safety:
+#   init.sql is idempotent (CREATE TABLE IF NOT EXISTS,
+#   ADD COLUMN IF NOT EXISTS, the ENUM-creation block is wrapped in
+#   EXCEPTION WHEN duplicate_object THEN NULL). Repeat runs are no-ops.
+#
+#   If a future schema change ever drops or renames a column, the
+#   init.sql pattern stops being safe and this workflow needs to grow a
+#   real migration sequence. Flag in PR review.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "packages/db/init.sql"
+      - "services/agent/scripts/migrate.py"
+      - ".github/workflows/migrate.yml"
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+          cache-dependency-path: services/agent/requirements.txt
+
+      - name: Install asyncpg
+        # Just the migrate script's needs, not the full agent reqs —
+        # keeps this workflow fast.
+        run: pip install asyncpg
+
+      - name: Apply init.sql
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -e
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DATABASE_URL repo secret is not set"
+            exit 1
+          fi
+          python services/agent/scripts/migrate.py
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## Migration"
+            echo
+            echo "- Target: Neon (\`DATABASE_URL\` repo secret)"
+            echo "- Source: \`packages/db/init.sql\`"
+            echo "- Idempotent (\`IF NOT EXISTS\` everywhere)"
+            echo
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "Status: ✅ applied"
+            else
+              echo "Status: ❌ failed — check the step log above"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
