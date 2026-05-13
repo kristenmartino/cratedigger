@@ -25,12 +25,20 @@ Rate limit policy:
     share the same throttle.
   - Discogs: 60/min auth'd = 1 req/sec equivalent. Same throttle pattern
     via separate lock so a slow MB call doesn't block Discogs.
+
+Artist verification (added after a Dollar Diamonds release got matched
+to "Street Corner Symphonies Volume 12: 1960" because the title term
+"Volume Five" was generic and the artist wasn't indexed in MB):
+the lookup confirms the returned release's `artist-credit` loosely
+matches the input artist. Mismatch → reject. No-cover beats wrong-cover.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
+import unicodedata
 from typing import Any
 
 from agent.config import settings
@@ -53,6 +61,105 @@ _DISCOGS_LAST_AT = 0.0
 _DISCOGS_MIN_INTERVAL = 1.05
 
 
+# ── Artist-match verification ───────────────────────────────────────────
+
+
+_PUNCT_RE = re.compile(r"[^\w\s]")
+_WS_RE = re.compile(r"\s+")
+
+
+def _normalize_artist(name: str) -> str:
+    """Lowercase, ASCII-fold, drop punctuation, collapse whitespace.
+
+    Loose enough that 'Mary Yuzovskaya' == 'mary yuzovskaya', that 'Burial'
+    matches 'BURIAL', and that 'Boards Of Canada' matches 'Boards of Canada'.
+    Strict enough that 'Dollar Diamonds' never matches 'Various Artists'.
+    """
+    if not name:
+        return ""
+    folded = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return _WS_RE.sub(" ", _PUNCT_RE.sub("", folded.lower())).strip()
+
+
+# 4-char min on the shorter side keeps "the", "a", "an", "and", "of"
+# from anchoring false-positive substring matches like "the" matching
+# "the beatles". Real artist names this short ("M83", "U2") match on
+# exact-equality, never substring, so the 4-char cost is bounded.
+_MIN_SUBSTRING_LEN = 4
+
+
+def _artists_match(input_artist: str, candidate_artist: str) -> bool:
+    """Strict artist-equivalence check. No fuzzy thresholds.
+
+    Two acceptance rules, in order:
+      1. Normalized exact match.
+      2. One is a substring of the other AND the shorter side is at
+         least 3 chars. Handles label-prefix variants like 'Various
+         Artists - Hyperdub' matching 'Hyperdub', and single-name
+         artists against feature credits like 'Burial' matching
+         'Burial Four Tet' (after punctuation strip).
+         The 3-char minimum guards against single-letter false
+         positives like 'M' matching 'M Lamar'.
+
+    Anything else → reject. We don't do token-overlap, Levenshtein,
+    Jaccard, or rapidfuzz thresholds here. Those approaches all need
+    calibration data we don't have yet — picking thresholds by feel
+    is how Dollar Diamonds got matched to Street Corner Symphonies.
+
+    Coverage cost of strict-only:
+      - Order variations ('The Cinematic Orchestra' vs
+        'Cinematic Orchestra, The') will miss
+      - Feature credits that aren't substring-contained will miss
+        (e.g., input 'James Blake' vs MB's 'James Blake & friends'
+        IS caught by substring; input 'Burial / Four Tet' vs MB's
+        'Burial' is also caught; but 'A & B' vs 'B & A' is not)
+      - Aliases entirely out of scope
+
+    Coverage misses produce "no cover" — visible but recoverable.
+    The fuzzier alternatives would produce "wrong cover" instead —
+    invisible to the pipeline, visible to the reader, and corrosive
+    to editorial trust. Bias is intentional.
+
+    To revisit this rule: instrument every rejection in production
+    for a week, hand-label the (input, candidate) pairs, then decide
+    if a fuzzy threshold buys real coverage without false positives.
+    """
+    a = _normalize_artist(input_artist)
+    b = _normalize_artist(candidate_artist)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    if len(shorter) < _MIN_SUBSTRING_LEN:
+        return False
+    # Whole-word substring containment. Pad both sides with spaces so
+    # "burial" doesn't match "burialground" but DOES match anywhere
+    # inside "burial four tet" — including at the start or end.
+    return f" {shorter} " in f" {longer} "
+
+
+def _mb_artist_credit_name(rg: dict[str, Any]) -> str:
+    """Read the artist-credit's display name out of an MB release-group.
+
+    MB returns artist-credit as a list of {name, joinphrase, artist:{...}}
+    entries. Concatenated, they form the display string ('Burial &
+    Four Tet'). For single-artist releases the list has one entry.
+    """
+    credits = rg.get("artist-credit") or []
+    parts: list[str] = []
+    for ac in credits:
+        name = ac.get("name") or (ac.get("artist") or {}).get("name") or ""
+        parts.append(name)
+        join = ac.get("joinphrase") or ""
+        if join:
+            parts.append(join)
+    return "".join(parts).strip()
+
+
+# ── Rate-limit throttles ────────────────────────────────────────────────
+
+
 async def _throttle(lock: asyncio.Lock, last_at_attr: str, min_interval: float) -> None:
     """Sleep enough so the next request honors the min-interval since the
     last one in the same channel."""
@@ -71,13 +178,25 @@ async def _throttle(lock: asyncio.Lock, last_at_attr: str, min_interval: float) 
 async def _mb_search_release_group(
     http: AsyncSession, artist: str, title: str
 ) -> str | None:
-    """Search MB for a release-group matching (artist, title). Return MBID."""
+    """Search MB for a release-group matching (artist, title). Return MBID
+    ONLY when the top result's artist-credit verifies against the input.
+
+    Top-result-without-verification was how a Dollar Diamonds release got
+    matched to a doo-wop compilation: Lucene's AND degrades to OR-like
+    scoring when one side has no matches, so a generic title like
+    "Volume Five" wins on its own. We pull artist-credit back in the
+    search response (with `inc=artist-credits` via the docs note below)
+    and post-filter — no match, no MBID.
+    """
     await _throttle(_MB_LOCK, "_MB_LAST_AT", _MB_MIN_INTERVAL)
+    # Lucene-y: AND filter both sides, request a few results so we can
+    # pick the first that ALSO verifies on artist-credit (rather than
+    # blindly trusting top-1).
     query = f'releasegroup:"{title}" AND artist:"{artist}"'
     try:
         resp = await http.get(
             f"{MB_BASE}/release-group/",
-            params={"query": query, "fmt": "json", "limit": "1"},
+            params={"query": query, "fmt": "json", "limit": "5"},
             allow_redirects=True,
         )
         if resp.status_code != 200:
@@ -91,9 +210,15 @@ async def _mb_search_release_group(
         return None
 
     rgs = data.get("release-groups") or []
-    if not rgs:
-        return None
-    return rgs[0].get("id")
+    for rg in rgs:
+        matched_artist = _mb_artist_credit_name(rg)
+        if _artists_match(artist, matched_artist):
+            return rg.get("id")
+        logger.info(
+            "MB candidate rejected (artist mismatch): input %r vs matched %r",
+            artist, matched_artist,
+        )
+    return None
 
 
 async def _mb_lookup_release_group(
@@ -146,7 +271,14 @@ async def _discogs_cover(
     http: AsyncSession, artist: str, title: str
 ) -> str | None:
     """Best-effort cover-image lookup via Discogs Search. Skips silently
-    without a token; returns None on miss or any error."""
+    without a token; returns None on miss or any error.
+
+    Uses Discogs's STRUCTURED search params (`artist=…&release_title=…`)
+    rather than full-text `q=` so the upstream match is artist-aware.
+    Post-filter still applies: Discogs's results[].title is shaped like
+    'Artist - Title' so we parse the artist half and verify with
+    `_artists_match`, same threshold the MB path uses.
+    """
     token = settings.discogs_token
     if not token:
         return None
@@ -155,9 +287,10 @@ async def _discogs_cover(
         resp = await http.get(
             f"{DISCOGS_BASE}/database/search",
             params={
-                "q": f"{artist} {title}",
+                "artist": artist,
+                "release_title": title,
                 "type": "release",
-                "per_page": "1",
+                "per_page": "5",
             },
             headers={
                 "Authorization": f"Discogs token={token}",
@@ -171,13 +304,24 @@ async def _discogs_cover(
     except Exception as e:
         logger.warning("Discogs lookup %r — %r raised: %s", artist, title, e)
         return None
-    results = data.get("results") or []
-    if not results:
-        return None
-    cover = results[0].get("cover_image")
-    if cover and not cover.startswith("http"):
-        return None
-    return cover
+
+    for item in data.get("results") or []:
+        # Discogs result titles are "Artist - Title". Pull the artist
+        # half and verify against input. Reject 'Various Artists' and
+        # other generic-comp matches.
+        item_title = item.get("title") or ""
+        candidate_artist = item_title.split(" - ", 1)[0] if " - " in item_title else ""
+        if not _artists_match(artist, candidate_artist):
+            logger.info(
+                "Discogs candidate rejected (artist mismatch): "
+                "input %r vs matched %r (full title: %r)",
+                artist, candidate_artist, item_title,
+            )
+            continue
+        cover = item.get("cover_image")
+        if cover and isinstance(cover, str) and cover.startswith("http"):
+            return cover
+    return None
 
 
 # ── Public API ──────────────────────────────────────────────────────────
