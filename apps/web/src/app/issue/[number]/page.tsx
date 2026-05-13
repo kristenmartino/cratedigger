@@ -15,7 +15,6 @@
  */
 import { db, schema } from "@cratedigger/db";
 import { and, eq, ne } from "drizzle-orm";
-import Link from "next/link";
 import { Markdown } from "@/components/Markdown";
 
 type PageProps = {
@@ -135,14 +134,14 @@ export default async function IssuePage({ params }: PageProps) {
                   <Markdown>{rec.prose}</Markdown>
                 </p>
                 {listen && (
-                  <Link
+                  <a
                     href={listen}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-5 inline-block bg-ink text-paper font-mono text-[11px] uppercase tracking-[0.22em] px-[18px] py-[10px] hover:opacity-80 transition"
                   >
                     Listen ↗
-                  </Link>
+                  </a>
                 )}
               </section>
             );
