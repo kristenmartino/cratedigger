@@ -20,7 +20,10 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import feedparser
+try:
+    import feedparser
+except ImportError:  # pragma: no cover — dev sandboxes without the dep
+    feedparser = None  # type: ignore[assignment]
 
 from agent.config import settings
 from agent.sources._http import IMPERSONATE, AsyncSession

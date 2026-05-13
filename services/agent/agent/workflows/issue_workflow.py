@@ -358,6 +358,127 @@ async def normalize_releases_node(state: IssueState) -> dict:
     return {"new_releases": new_releases}
 
 
+async def enrich_metadata_node(state: IssueState) -> dict:
+    """Look up MusicBrainz + Discogs metadata for each release and persist
+    cover_art_url / bandcamp_url / spotify_url to the `releases` table.
+
+    Skips releases that already have a Bandcamp URL AND a cover (returning
+    listeners' enrichment from prior weeks doesn't re-cost). Updates state
+    so downstream nodes see enriched values without re-fetching.
+
+    Rate-limited by the module-level locks in agent.sources.metadata so we
+    don't burn through MusicBrainz's 1 req/sec policy. Worst case for a
+    cold catalog of ~96 releases × 2 MB calls = ~3 minutes added to the
+    pipeline. Acceptable for a weekly batch; repeat releases skip on
+    subsequent runs.
+    """
+    from agent.sources.metadata import lookup_release
+
+    run_id = state["agent_run_id"]
+    new_releases = state.get("new_releases", [])
+    if not new_releases:
+        return {}
+
+    await update_agent_run(run_id, current_step="enriching_metadata")
+
+    pool = await get_pool()
+
+    # First pass: pull the existing metadata for every release so we only
+    # hit the network for what's actually missing. One round-trip vs N.
+    release_ids = [r["id"] for r in new_releases if r.get("id")]
+    existing_map: dict[str, dict[str, str | None]] = {}
+    if release_ids:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id::text, cover_art_url, bandcamp_url, spotify_url
+                  FROM releases
+                 WHERE id = ANY($1::uuid[])
+                """,
+                release_ids,
+            )
+        for row in rows:
+            existing_map[row["id"]] = {
+                "cover_art_url": row["cover_art_url"],
+                "bandcamp_url": row["bandcamp_url"],
+                "spotify_url": row["spotify_url"],
+            }
+
+    # Bound parallelism. The MB throttle is global so we won't actually
+    # exceed 1 req/sec to MB, but the semaphore prevents 96 simultaneous
+    # TCP connections piling up.
+    sem = asyncio.Semaphore(5)
+    enriched_releases: list[dict] = []
+    n_looked_up = 0
+    n_with_cover_after = 0
+    n_with_bandcamp_after = 0
+    n_with_spotify_after = 0
+
+    async def enrich_one(rel: dict) -> dict:
+        nonlocal n_looked_up
+        rel_id = rel.get("id")
+        existing = existing_map.get(rel_id, {}) if rel_id else {}
+        # Anything already populated stays — we only ever fill gaps.
+        before = {
+            k: existing.get(k) or (rel.get(k) or None)
+            for k in ("cover_art_url", "bandcamp_url", "spotify_url")
+        }
+        # Skip the network if both Bandcamp and a cover are already there —
+        # those are the two fields the email + web rely on.
+        if before["bandcamp_url"] and before["cover_art_url"]:
+            return {**rel, **before}
+
+        async with sem:
+            n_looked_up += 1
+            lookup = await lookup_release(rel.get("artist") or "", rel.get("title") or "")
+
+        merged = dict(before)
+        for k in ("cover_art_url", "bandcamp_url", "spotify_url"):
+            if not merged.get(k) and lookup.get(k):
+                merged[k] = lookup[k]
+
+        # Persist whatever's new. COALESCE preserves any value we already
+        # had if the lookup came back empty for that field.
+        if rel_id and any(lookup.get(k) for k in ("cover_art_url", "bandcamp_url", "spotify_url")):
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE releases
+                       SET cover_art_url = COALESCE(releases.cover_art_url, $1),
+                           bandcamp_url  = COALESCE(releases.bandcamp_url, $2),
+                           spotify_url   = COALESCE(releases.spotify_url, $3)
+                     WHERE id = $4::uuid
+                    """,
+                    lookup.get("cover_art_url"),
+                    lookup.get("bandcamp_url"),
+                    lookup.get("spotify_url"),
+                    rel_id,
+                )
+
+        return {**rel, **merged}
+
+    enriched_releases = await asyncio.gather(*(enrich_one(r) for r in new_releases))
+
+    for r in enriched_releases:
+        if r.get("cover_art_url"):
+            n_with_cover_after += 1
+        if r.get("bandcamp_url"):
+            n_with_bandcamp_after += 1
+        if r.get("spotify_url"):
+            n_with_spotify_after += 1
+
+    logger.info(
+        "enrich_metadata: %d releases, %d looked up (skipped %d already-enriched), "
+        "post: %d/%d cover, %d/%d bandcamp, %d/%d spotify",
+        len(enriched_releases), n_looked_up,
+        len(enriched_releases) - n_looked_up,
+        n_with_cover_after, len(enriched_releases),
+        n_with_bandcamp_after, len(enriched_releases),
+        n_with_spotify_after, len(enriched_releases),
+    )
+    return {"new_releases": enriched_releases}
+
+
 async def embed_releases_node(state: IssueState) -> dict:
     """Voyage AI embeddings for new releases. Writes embedding column."""
     run_id = state["agent_run_id"]
@@ -1002,6 +1123,7 @@ def build_issue_graph():
     g.add_node("ingest_sources", ingest_sources_node)
     g.add_node("extract_artist_title", extract_artist_title_node)
     g.add_node("normalize_releases", normalize_releases_node)
+    g.add_node("enrich_metadata", enrich_metadata_node)
     g.add_node("embed_releases", embed_releases_node)
     g.add_node("score_for_user", score_for_user_node)
     g.add_node("categorize_picks", categorize_picks_node)
@@ -1015,7 +1137,8 @@ def build_issue_graph():
     g.set_entry_point("ingest_sources")
     g.add_edge("ingest_sources", "extract_artist_title")
     g.add_edge("extract_artist_title", "normalize_releases")
-    g.add_edge("normalize_releases", "embed_releases")
+    g.add_edge("normalize_releases", "enrich_metadata")
+    g.add_edge("enrich_metadata", "embed_releases")
     g.add_edge("embed_releases", "score_for_user")
     g.add_edge("score_for_user", "categorize_picks")
     g.add_edge("categorize_picks", "generate_prose")
