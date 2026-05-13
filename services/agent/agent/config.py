@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_address: str = "editor@kristenmartino.ai"
 
+    # Optional. Discogs API personal-access token. Used as a fallback cover-art
+    # source for releases MusicBrainz / Cover Art Archive doesn't index. Free
+    # to generate at https://www.discogs.com/settings/developers. Without it,
+    # the metadata enrichment step uses MusicBrainz only.
+    discogs_token: str = ""
+
     # Public web app base URL. Used by the email template for the
     # "Read in browser" anchor pointing at /issue/<n>. Defaults to the
     # production domain; override locally for preview deploys.

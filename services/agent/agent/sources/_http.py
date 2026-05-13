@@ -14,10 +14,19 @@ per request from the native handshake) is negligible for a weekly batch.
 Why one shared helper: when curl_cffi releases a Chrome bump (e.g. chrome120 →
 chrome125), only this file changes. The scrapers don't care which version
 they're impersonating, just that the session does.
+
+The curl_cffi import is guarded so the rest of the package — particularly
+deterministic helpers like agent.sources.metadata._parse_mb_urls — can be
+imported in dev sandboxes that don't have the native binary installed.
+AsyncSession is None there; any code that actually tries to instantiate it
+gets a clear error at call time rather than at module-load time.
 """
 from __future__ import annotations
 
-from curl_cffi.requests import AsyncSession
+try:
+    from curl_cffi.requests import AsyncSession
+except ImportError:  # pragma: no cover — dev sandboxes without the native binary
+    AsyncSession = None  # type: ignore[assignment,misc]
 
 # Matches the User-Agent we set in config.crawler_user_agent. Keep these in
 # sync — sites that compare UA against TLS fingerprint will 403 a mismatch.
