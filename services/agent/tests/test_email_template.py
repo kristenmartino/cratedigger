@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.email_template import build_friday_drop_mjml, build_issue_mjml
+from agent.email_template import build_friday_drop_mjml, build_issue_mjml, _md_inline
 
 
 @pytest.fixture
@@ -226,6 +226,101 @@ def test_render_mjml_diagnostic_on_total_miss():
         assert "No known MJML render function" in msg
     else:
         raise AssertionError("expected RuntimeError on total miss")
+
+
+# ── Markdown rendering ──────────────────────────────────────────────────
+
+
+def test_md_inline_renders_bold_and_italic():
+    assert _md_inline("a *quiet* week of **drift** and patience") == (
+        "a <em>quiet</em> week of <strong>drift</strong> and patience"
+    )
+
+
+def test_md_inline_escapes_before_converting():
+    """User-supplied HTML must be escaped before the markdown substitution
+    runs — otherwise *<script>* would slip through as a literal tag."""
+    out = _md_inline("watch out for *<script>*")
+    assert "<script>" not in out
+    assert "<em>&lt;script&gt;</em>" in out
+
+
+def test_md_inline_bold_wins_over_italic():
+    """Order matters: ** must be detected before *."""
+    out = _md_inline("**bold** and *italic*")
+    assert "<strong>bold</strong>" in out
+    assert "<em>italic</em>" in out
+    # No leaked single-* matches inside the bold span
+    assert "<strong>bold</strong>" in out and "<em>bold</em>" not in out
+
+
+def test_md_inline_handles_empty_and_none():
+    assert _md_inline("") == ""
+    assert _md_inline(None) == ""  # type: ignore[arg-type]
+
+
+# ── Cover art + listen link ─────────────────────────────────────────────
+
+
+def test_issue_renders_cover_image_when_url_present(sample_issue):
+    """Lead pick gets cover_art_url — the template must emit <mj-image>."""
+    sample_issue["recommendations"][0]["cover_art_url"] = "https://example.com/cover.jpg"
+    mjml = build_issue_mjml(sample_issue)
+    assert 'src="https://example.com/cover.jpg"' in mjml
+    assert "<mj-image" in mjml
+
+
+def test_issue_skips_cover_image_when_url_missing(sample_issue):
+    """Most ingested releases won't have cover_art_url yet — skip silently."""
+    for r in sample_issue["recommendations"]:
+        r["cover_art_url"] = None
+    mjml = build_issue_mjml(sample_issue)
+    assert "<mj-image" not in mjml
+
+
+def test_issue_renders_listen_button_when_url_present(sample_issue):
+    sample_issue["recommendations"][0]["listen_url"] = "https://shhe.bandcamp.com/album/thalassa"
+    mjml = build_issue_mjml(sample_issue)
+    assert 'href="https://shhe.bandcamp.com/album/thalassa"' in mjml
+    assert "Listen ↗" in mjml
+
+
+def test_issue_skips_listen_button_when_url_missing(sample_issue):
+    for r in sample_issue["recommendations"]:
+        r["listen_url"] = None
+    mjml = build_issue_mjml(sample_issue)
+    assert "Listen ↗" not in mjml
+
+
+def test_issue_view_in_browser_anchor_uses_base_url(sample_issue):
+    mjml = build_issue_mjml(sample_issue, app_base_url="https://cratedigger.example.com")
+    assert 'href="https://cratedigger.example.com/issue/7"' in mjml
+    assert "Read in browser" in mjml
+
+
+def test_issue_omits_view_in_browser_when_no_base_url(sample_issue):
+    mjml = build_issue_mjml(sample_issue)  # no app_base_url kwarg
+    assert "Read in browser" not in mjml
+
+
+# ── Markdown applied in editor's note ───────────────────────────────────
+
+
+def test_editor_note_markdown_is_rendered():
+    """The literal `*grain*` in the sample fixture must become <em>grain</em>."""
+    issue = {
+        "issue_number": 7,
+        "publish_date": "2026-05-17",
+        "title": "A quieter week",
+        "editor_note": "This week is about *grain* and **stillness**.",
+        "recommendations": [],
+    }
+    mjml = build_issue_mjml(issue)
+    assert "<em>grain</em>" in mjml
+    assert "<strong>stillness</strong>" in mjml
+    # Asterisks should NOT be present in the rendered HTML span
+    assert "*grain*" not in mjml
+    assert "**stillness**" not in mjml
 
 
 def test_friday_drop_escapes_html_in_fields():

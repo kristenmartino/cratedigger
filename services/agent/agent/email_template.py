@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger("cratedigger-agent.email_template")
@@ -88,9 +89,40 @@ def render_mjml(source: str) -> str:
     )
 
 
+# ── Minimal markdown → HTML ─────────────────────────────────────────────
+#
+# Haiku emits `*italic*` and `**bold**` markers in editor's notes and prose.
+# The template needs to convert them to real HTML before insertion — without
+# this step the asterisks render literally ("*stillness*" instead of italic
+# "stillness"). We keep this surgical (just emphasis), not a full markdown
+# parser — links and lists don't appear in our generated copy, and any
+# heavier converter would invite XSS surface area we don't need.
+#
+# Order matters: bold runs first because `**` includes `*` as a substring.
+# Non-greedy capture so multiple emphases on one line don't merge.
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", re.DOTALL)
 
 
-def build_issue_mjml(issue: dict[str, Any]) -> str:
+def _md_inline(text: str) -> str:
+    """HTML-escape then convert *em* / **strong** markdown. Safe-by-default —
+    we escape first so any tags in user input become inert text; then we
+    insert our own <em>/<strong> on top of the escaped string."""
+    escaped = html.escape(text or "", quote=True)
+    escaped = _BOLD_RE.sub(r"<strong>\1</strong>", escaped)
+    escaped = _ITALIC_RE.sub(r"<em>\1</em>", escaped)
+    return escaped
+
+
+# ── Sunday issue template ───────────────────────────────────────────────
+
+
+def build_issue_mjml(
+    issue: dict[str, Any],
+    *,
+    app_base_url: str | None = None,
+) -> str:
     """Build the MJML source string for a Sunday issue.
 
     Expected shape (matches the DB join in render_email_node):
@@ -99,21 +131,27 @@ def build_issue_mjml(issue: dict[str, Any]) -> str:
           "issue_number": int,
           "publish_date": str,           # ISO date
           "title": str,
-          "editor_note": str,
+          "editor_note": str,            # may contain *em* / **strong** markdown
           "recommendations": [
             {
               "category": "lead" | "steady" | "stretch" | "withheld",
               "source_attr": str,
-              "prose": str,
+              "prose": str,              # may contain markdown
               "position": int,
               "artist": str,
               "release_title": str,
+              "cover_art_url": str | None,
+              "listen_url": str | None,  # bandcamp_url || spotify_url || url
             }, ...
           ],
         }
+
+    app_base_url, when set, enables the "Read in browser" anchor at the top
+    (e.g., `https://cratedigger.kristenmartino.ai/issue/<n>`). Omitted in
+    tests so the markup stays compact.
     """
     title = _esc(issue["title"])
-    editor_note = _esc(issue["editor_note"])
+    editor_note_html = _md_inline(issue["editor_note"])
     issue_number = int(issue["issue_number"])
     publish_date = _esc(str(issue["publish_date"]))
     padded_number = f"{issue_number:02d}"
@@ -124,6 +162,17 @@ def build_issue_mjml(issue: dict[str, Any]) -> str:
         for rec in issue.get("recommendations", [])
         if rec.get("category") != "withheld"
     )
+
+    view_in_browser_block = ""
+    if app_base_url:
+        issue_url = f"{app_base_url.rstrip('/')}/issue/{issue_number}"
+        view_in_browser_block = f"""    <mj-section padding="20px 24px 0">
+      <mj-column>
+        <mj-text align="center" font-family="DM Mono, monospace" font-size="9px" letter-spacing="0.22em" text-transform="uppercase" color="#5A6669">
+          <a href="{_esc(issue_url)}" style="color:#5A6669; text-decoration:underline;">Read in browser</a>
+        </mj-text>
+      </mj-column>
+    </mj-section>"""
 
     return f"""<mjml>
   <mj-head>
@@ -137,9 +186,12 @@ def build_issue_mjml(issue: dict[str, Any]) -> str:
       .eyebrow  {{ font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: #C8412B; }}
       .display  {{ font-family: 'Instrument Serif', serif; font-style: italic; font-size: 96px; color: #15191D; line-height: 0.85; }}
       .editor   {{ font-family: 'Spectral', serif; font-size: 16px; line-height: 1.65; color: #2D353A; font-style: italic; }}
+      .editor strong {{ font-style: normal; font-weight: 600; color: #15191D; }}
+      .editor em     {{ font-style: italic; color: #15191D; }}
     </mj-style>
   </mj-head>
   <mj-body background-color="#EFE4CC">
+{view_in_browser_block}
     <mj-section padding="40px 24px 12px">
       <mj-column>
         <mj-text align="center" css-class="wordmark">
@@ -158,7 +210,7 @@ def build_issue_mjml(issue: dict[str, Any]) -> str:
 
     <mj-section padding="40px 24px 24px">
       <mj-column>
-        <mj-text css-class="editor">{editor_note}</mj-text>
+        <mj-text css-class="editor">{editor_note_html}</mj-text>
         <mj-text align="right" font-family="Caveat, cursive" font-size="28px" color="#C8412B">— C.</mj-text>
       </mj-column>
     </mj-section>
@@ -182,11 +234,31 @@ def _render_recommendation(rec: dict[str, Any]) -> str:
     source_attr = _esc(rec.get("source_attr") or "")
     artist = _esc(rec.get("artist") or "")
     release_title = _esc(rec.get("release_title") or "")
-    prose = _esc(rec.get("prose") or "")
+    prose_html = _md_inline(rec.get("prose") or "")
+    cover_art_url = rec.get("cover_art_url")
+    listen_url = rec.get("listen_url")
+
+    cover_block = ""
+    if cover_art_url:
+        cover_block = f"""        <mj-image src="{_esc(cover_art_url)}" alt="{artist} — {release_title}"
+                  width="320px" padding-bottom="20px" border-radius="2px" />
+"""
+
+    listen_block = ""
+    if listen_url:
+        listen_block = f"""        <mj-button href="{_esc(listen_url)}"
+                   background-color="#15191D" color="#EFE4CC"
+                   font-family="DM Mono, monospace" font-size="11px"
+                   letter-spacing="0.22em" text-transform="uppercase"
+                   border-radius="0" inner-padding="10px 18px" align="left"
+                   padding-top="18px" padding-left="0">
+          Listen ↗
+        </mj-button>
+"""
 
     return f"""    <mj-section padding="32px 24px" border-top="1px solid rgba(21,25,29,0.16)">
       <mj-column>
-        <mj-text font-family="DM Mono, monospace" font-size="9.5px" letter-spacing="0.18em" text-transform="uppercase" color="#1E4543">
+{cover_block}        <mj-text font-family="DM Mono, monospace" font-size="9.5px" letter-spacing="0.18em" text-transform="uppercase" color="#1E4543">
           {category} · via {source_attr}
         </mj-text>
         <mj-text font-family="DM Mono, monospace" font-size="11px" letter-spacing="0.22em" text-transform="uppercase" color="#1E4543" padding-top="4px">
@@ -195,9 +267,12 @@ def _render_recommendation(rec: dict[str, Any]) -> str:
         <mj-text font-family="Instrument Serif, serif" font-style="italic" font-size="40px" color="#15191D" padding-top="6px">
           {release_title}
         </mj-text>
-        <mj-text css-class="editor" padding-top="14px">{prose}</mj-text>
-      </mj-column>
+        <mj-text css-class="editor" padding-top="14px">{prose_html}</mj-text>
+{listen_block}      </mj-column>
     </mj-section>"""
+
+
+# ── Friday drop template ────────────────────────────────────────────────
 
 
 def build_friday_drop_mjml(drop: dict[str, Any]) -> str:
@@ -213,13 +288,35 @@ def build_friday_drop_mjml(drop: dict[str, Any]) -> str:
           "release_title": str,
           "source_attr": str,
           "prose": str,
+          "cover_art_url": str | None,
+          "listen_url": str | None,
         }
     """
     issue_number = int(drop["issue_number"])
     artist = _esc(drop.get("artist") or "")
     release_title = _esc(drop.get("release_title") or "")
     source_attr = _esc(drop.get("source_attr") or "")
-    prose = _esc(drop.get("prose") or "")
+    prose_html = _md_inline(drop.get("prose") or "")
+    cover_art_url = drop.get("cover_art_url")
+    listen_url = drop.get("listen_url")
+
+    cover_block = ""
+    if cover_art_url:
+        cover_block = f"""        <mj-image src="{_esc(cover_art_url)}" alt="{artist} — {release_title}"
+                  width="360px" padding-bottom="22px" border-radius="2px" />
+"""
+
+    listen_block = ""
+    if listen_url:
+        listen_block = f"""        <mj-button href="{_esc(listen_url)}"
+                   background-color="#15191D" color="#EFE4CC"
+                   font-family="DM Mono, monospace" font-size="11px"
+                   letter-spacing="0.22em" text-transform="uppercase"
+                   border-radius="0" inner-padding="10px 18px" align="left"
+                   padding-top="22px" padding-left="0">
+          Listen ↗
+        </mj-button>
+"""
 
     return f"""<mjml>
   <mj-head>
@@ -234,6 +331,8 @@ def build_friday_drop_mjml(drop: dict[str, Any]) -> str:
       .meta     {{ font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: #1E4543; }}
       .display  {{ font-family: 'Instrument Serif', serif; font-style: italic; font-size: 56px; color: #15191D; line-height: 0.95; }}
       .editor   {{ font-family: 'Spectral', serif; font-size: 16px; line-height: 1.65; color: #2D353A; font-style: italic; }}
+      .editor strong {{ font-style: normal; font-weight: 600; color: #15191D; }}
+      .editor em     {{ font-style: italic; color: #15191D; }}
     </mj-style>
   </mj-head>
   <mj-body background-color="#EFE4CC">
@@ -253,11 +352,11 @@ def build_friday_drop_mjml(drop: dict[str, Any]) -> str:
 
     <mj-section padding="24px 24px 8px">
       <mj-column>
-        <mj-text css-class="meta">via {source_attr}</mj-text>
+{cover_block}        <mj-text css-class="meta">via {source_attr}</mj-text>
         <mj-text css-class="meta" padding-top="4px">{artist}</mj-text>
         <mj-text css-class="display" padding-top="6px">{release_title}</mj-text>
-        <mj-text css-class="editor" padding-top="20px">{prose}</mj-text>
-      </mj-column>
+        <mj-text css-class="editor" padding-top="20px">{prose_html}</mj-text>
+{listen_block}      </mj-column>
     </mj-section>
 
     <mj-section padding="40px 24px 24px">
@@ -278,5 +377,8 @@ def _esc(s: str) -> str:
     MJML is XML-shaped — unescaped `<`, `&` etc. in editor_note or prose
     would break the parser. html.escape covers the common cases plus
     handling double quotes for attribute-safe insertion.
+
+    Use _md_inline() instead for any field that may contain * / ** markdown
+    — _md_inline calls html.escape itself then converts the markers.
     """
     return html.escape(str(s), quote=True)

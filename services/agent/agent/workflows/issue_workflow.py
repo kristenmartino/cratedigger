@@ -849,7 +849,10 @@ async def render_email_node(state: IssueState) -> dict:
         rec_rows = await conn.fetch(
             """
             SELECT r.position, r.category::text AS category, r.source_attr,
-                   r.prose, rel.artist, rel.title AS release_title
+                   r.prose, r.cover_art_url AS rec_cover_art_url,
+                   rel.artist, rel.title AS release_title,
+                   rel.cover_art_url AS rel_cover_art_url,
+                   rel.bandcamp_url, rel.spotify_url, rel.url
               FROM recommendations r
               JOIN releases rel ON rel.id = r.release_id
              WHERE r.issue_id = $1::uuid
@@ -858,16 +861,38 @@ async def render_email_node(state: IssueState) -> dict:
             issue_id,
         )
 
+    # Per record: prefer the cover saved on the recommendation row (set at
+    # persist time from the source crawl) before falling back to whatever
+    # the releases row carries. Listen link prefers Bandcamp → Spotify →
+    # the canonical source URL (the RSS entry / shop product page).
+    recs_payload = []
+    for r in rec_rows:
+        cover = r["rec_cover_art_url"] or r["rel_cover_art_url"]
+        listen = r["bandcamp_url"] or r["spotify_url"] or r["url"]
+        recs_payload.append({
+            "position": r["position"],
+            "category": r["category"],
+            "source_attr": r["source_attr"],
+            "prose": r["prose"],
+            "artist": r["artist"],
+            "release_title": r["release_title"],
+            "cover_art_url": cover,
+            "listen_url": listen,
+        })
+
     issue_payload = {
         "issue_number": issue_row["issue_number"],
         "publish_date": issue_row["publish_date"],
         "title": issue_row["title"],
         "editor_note": issue_row["editor_note"],
-        "recommendations": [dict(r) for r in rec_rows],
+        "recommendations": recs_payload,
     }
 
     try:
-        mjml_source = build_issue_mjml(issue_payload)
+        mjml_source = build_issue_mjml(
+            issue_payload,
+            app_base_url=settings.app_base_url or None,
+        )
         html_body = render_mjml(mjml_source)
     except Exception as e:
         # Includes ImportError (wrong mjml API) and runtime render errors.

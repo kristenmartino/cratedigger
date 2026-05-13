@@ -64,8 +64,13 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
                 r.id::text AS rec_id,
                 r.source_attr,
                 r.prose,
+                r.cover_art_url AS rec_cover_art_url,
                 rel.artist,
                 rel.title AS release_title,
+                rel.cover_art_url AS rel_cover_art_url,
+                rel.bandcamp_url,
+                rel.spotify_url,
+                rel.url,
                 i.issue_number,
                 u.email AS to_email
               FROM recommendations r
@@ -108,6 +113,8 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
                 "release_title": row["release_title"],
                 "source_attr": row["source_attr"],
                 "prose": row["prose"],
+                "cover_art_url": row["rec_cover_art_url"] or row["rel_cover_art_url"],
+                "listen_url": row["bandcamp_url"] or row["spotify_url"] or row["url"],
             })
             # Defensive MJML dispatch — see agent/email_template.render_mjml
             # for why we don't pin to a specific function name.
