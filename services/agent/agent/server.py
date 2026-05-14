@@ -37,6 +37,10 @@ from agent.ingestion.seed_profile import (
     build_profile_from_seed,
     upsert_taste_profile,
 )
+from agent.sources.spotify_playlist import (
+    fetch_playlist_artists,
+    parse_playlist_url,
+)
 from agent.workflows.issue_workflow import IssueState, issue_pipeline
 
 logger = logging.getLogger("cratedigger-agent.server")
@@ -139,6 +143,7 @@ async def root():
             "run_issue": "POST /v1/run-issue",
             "friday_drop": "POST /v1/friday-drop",
             "build_taste_profile": "POST /v1/build-taste-profile",
+            "parse_playlist": "POST /v1/parse-playlist",
         },
     }
 
@@ -318,4 +323,43 @@ async def build_taste_profile(
             "n_artists": len(seed.get("artists", [])),
             "n_tags": len(seed.get("tags", [])),
         },
+    )
+
+
+@app.post(
+    "/v1/parse-playlist",
+    summary="Extract artist list from a public Spotify playlist URL",
+)
+async def parse_playlist(
+    request: Request,
+    x_pipeline_key: str | None = Header(default=None, alias="X-Pipeline-Key"),
+):
+    """Given a Spotify playlist URL/ID, return up to 50 unique artist
+    names from the playlist's tracks. Used by the onboarding form to
+    pre-fill the artists textarea so users can paste a playlist they
+    already curate instead of typing 20+ names manually.
+
+    Only public playlists work — we use Client Credentials, not user
+    OAuth. Private playlists return an empty list (treated as "not
+    found" by the caller, who falls back to manual entry).
+    """
+    _verify_pipeline_key(x_pipeline_key)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    raw = body.get("playlist_url") or body.get("url") or ""
+    playlist_id = parse_playlist_url(raw)
+    if not playlist_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Couldn't recognize a Spotify playlist URL or ID in the input",
+        )
+
+    artists = await fetch_playlist_artists(playlist_id)
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"playlist_id": playlist_id, "artists": artists},
     )

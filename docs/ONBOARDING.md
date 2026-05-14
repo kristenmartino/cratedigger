@@ -40,6 +40,25 @@ How new users get added to Crate Digger and start receiving Sunday emails.
 5. Clerk's Svix-backed delivery retries with backoff on non-2xx, so a
    brief Vercel outage won't lose a signup
 
+### Spotify playlist shortcut (Tier 2)
+
+The form has an optional "Have a playlist? Paste it." field. Pasting a
+public Spotify playlist URL → `/api/onboarding/parse-playlist` proxies to
+the agent's `POST /v1/parse-playlist`, which uses our Client Credentials
+token to read the playlist's tracks and pre-fills the artists textarea
+with up to 50 unique artists (preserving playlist order — head-of-list
+artists usually encode taste priority).
+
+Works for any public playlist; private playlists return empty (the user
+falls back to manual entry). Requires `SPOTIFY_CLIENT_ID` and
+`SPOTIFY_CLIENT_SECRET` set on Railway — same credentials we already use
+for catalog search in the metadata enrichment pipeline.
+
+Supported URL shapes: standard `open.spotify.com/playlist/<id>`,
+intl-redirected `open.spotify.com/intl-en/playlist/<id>`, the
+`?si=…` share-link variant, the desktop-client `spotify:playlist:<id>`
+URI, and bare 22-char IDs.
+
 ### What the seed looks like
 
 The form persists this JSONB into `taste_profiles.seed`:

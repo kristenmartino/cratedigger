@@ -61,10 +61,67 @@ export function OnboardingForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // Spotify playlist import — optional shortcut to pre-fill the textarea
+  const [playlistUrl, setPlaylistUrl] = useState("");
+  const [playlistStatus, setPlaylistStatus] = useState<string | null>(null);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+
   const artists = artistsText
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean);
+
+  const importFromPlaylist = async () => {
+    if (!playlistUrl.trim()) {
+      setPlaylistStatus("Paste a Spotify playlist URL first.");
+      return;
+    }
+    setPlaylistStatus(null);
+    setPlaylistLoading(true);
+    try {
+      const res = await fetch("/api/onboarding/parse-playlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playlist_url: playlistUrl.trim() }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        artists?: string[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setPlaylistStatus(body.error || `Couldn't load (${res.status}).`);
+        return;
+      }
+      const fetched = body.artists ?? [];
+      if (fetched.length === 0) {
+        setPlaylistStatus(
+          "No artists found — playlist may be private or empty.",
+        );
+        return;
+      }
+      // Merge into textarea — existing manual entries stay, new ones append
+      // (de-duped, case-insensitive). User can still edit the textarea
+      // afterward to remove or reorder.
+      const existing = new Set(
+        artists.map((a) => a.toLowerCase()),
+      );
+      const merged = [...artists];
+      for (const a of fetched) {
+        if (!existing.has(a.toLowerCase())) {
+          merged.push(a);
+          existing.add(a.toLowerCase());
+        }
+      }
+      setArtistsText(merged.join("\n"));
+      setPlaylistStatus(
+        `Added ${fetched.filter((a) => !artists.some((b) => b.toLowerCase() === a.toLowerCase())).length} artists from the playlist.`,
+      );
+    } catch (e) {
+      setPlaylistStatus(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setPlaylistLoading(false);
+    }
+  };
 
   const toggleTag = (tag: string) => {
     setTags((prev) => {
@@ -117,6 +174,42 @@ export function OnboardingForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-10">
+      {/* Spotify playlist import (optional shortcut) */}
+      <div>
+        <label
+          htmlFor="playlist"
+          className="block font-display italic text-[20px] text-ink"
+        >
+          Have a playlist? Paste it.
+        </label>
+        <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-soft">
+          Optional · Spotify public playlist URL
+        </p>
+        <div className="mt-3 flex flex-col sm:flex-row gap-2">
+          <input
+            id="playlist"
+            type="url"
+            value={playlistUrl}
+            onChange={(e) => setPlaylistUrl(e.target.value)}
+            placeholder="https://open.spotify.com/playlist/…"
+            className="flex-1 rounded border border-ink/20 bg-paper px-3 py-2 font-body text-[15px] text-ink focus:border-coral focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={importFromPlaylist}
+            disabled={playlistLoading}
+            className="px-4 py-2 rounded-full border border-ink text-ink font-mono text-[11px] uppercase tracking-[0.18em] disabled:opacity-50 hover:bg-ink hover:text-paper transition-colors"
+          >
+            {playlistLoading ? "Loading…" : "Import artists"}
+          </button>
+        </div>
+        {playlistStatus && (
+          <p className="mt-2 font-body italic text-[13px] text-ink-soft">
+            {playlistStatus}
+          </p>
+        )}
+      </div>
+
       {/* Artists */}
       <div>
         <label
