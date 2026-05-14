@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS releases (
     url                 TEXT,
     bandcamp_url        TEXT,
     spotify_url         TEXT,
+    youtube_url         TEXT,
+    soundcloud_url      TEXT,
     cover_art_url       TEXT,
     embedding           VECTOR(1024),
     metadata            JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -170,6 +172,13 @@ CREATE INDEX IF NOT EXISTS idx_recommendations_withhold
 -- CREATE TABLE above. Same pattern as agent_runs.releases_dropped_as_news.
 ALTER TABLE recommendations
     ADD COLUMN IF NOT EXISTS withheld_delivered_at TIMESTAMPTZ;
+
+-- youtube_url + soundcloud_url for the article-media-extraction step.
+-- Populated by extract_media_urls_node from embedded iframes/anchors in
+-- source articles. Idempotent so existing DBs pick them up on deploy.
+ALTER TABLE releases
+    ADD COLUMN IF NOT EXISTS youtube_url    TEXT,
+    ADD COLUMN IF NOT EXISTS soundcloud_url TEXT;
 
 -- ── feedback ──────────────────────────────────────────────────────────────
 

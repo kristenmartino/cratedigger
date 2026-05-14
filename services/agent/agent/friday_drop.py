@@ -70,6 +70,8 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
                 rel.cover_art_url AS rel_cover_art_url,
                 rel.bandcamp_url,
                 rel.spotify_url,
+                rel.youtube_url,
+                rel.soundcloud_url,
                 rel.url,
                 i.issue_number,
                 u.email AS to_email
@@ -117,7 +119,12 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
                 # Direct-audio only; no source-URL fallback (some source
                 # articles gate behind login walls). See render_email_node
                 # in issue_workflow.py for the same rule on Sunday emails.
-                "listen_url": row["bandcamp_url"] or row["spotify_url"],
+                "listen_url": (
+                    row["bandcamp_url"]
+                    or row["spotify_url"]
+                    or row["youtube_url"]
+                    or row["soundcloud_url"]
+                ),
             })
             # Defensive MJML dispatch — see agent/email_template.render_mjml
             # for why we don't pin to a specific function name.
