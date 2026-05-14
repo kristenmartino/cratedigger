@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS releases (
     url                 TEXT,
     bandcamp_url        TEXT,
     spotify_url         TEXT,
+    apple_music_url     TEXT,
     youtube_url         TEXT,
     soundcloud_url      TEXT,
     cover_art_url       TEXT,
@@ -179,6 +180,11 @@ ALTER TABLE recommendations
 ALTER TABLE releases
     ADD COLUMN IF NOT EXISTS youtube_url    TEXT,
     ADD COLUMN IF NOT EXISTS soundcloud_url TEXT;
+
+-- apple_music_url: populated by enrich_metadata_node via the iTunes
+-- Search API (free, no auth). Same idempotent pattern.
+ALTER TABLE releases
+    ADD COLUMN IF NOT EXISTS apple_music_url TEXT;
 
 -- ── feedback ──────────────────────────────────────────────────────────────
 

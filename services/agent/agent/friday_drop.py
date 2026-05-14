@@ -70,6 +70,7 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
                 rel.cover_art_url AS rel_cover_art_url,
                 rel.bandcamp_url,
                 rel.spotify_url,
+                rel.apple_music_url,
                 rel.youtube_url,
                 rel.soundcloud_url,
                 rel.url,
@@ -122,6 +123,7 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
                 "listen_url": (
                     row["bandcamp_url"]
                     or row["spotify_url"]
+                    or row["apple_music_url"]
                     or row["youtube_url"]
                     or row["soundcloud_url"]
                 ),

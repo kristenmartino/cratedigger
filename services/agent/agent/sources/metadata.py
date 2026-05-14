@@ -8,15 +8,19 @@ button lands on an article page and most records have no cover.
 
 This module looks up each `(artist, title)` against open music metadata
 APIs and returns whatever it finds: a cover art URL, a Bandcamp URL, a
-Spotify URL. Three nulls is a valid result.
+Spotify URL, an Apple Music URL, a YouTube URL. Five nulls is a valid result.
 
 MusicBrainz is primary because:
   - free, no auth, generous rate limit (1 req/sec per User-Agent)
   - explicit URL relationships (Bandcamp, Spotify, Apple Music, etc.)
   - paired with Cover Art Archive (deterministic image URLs by MBID)
 
-Discogs is an optional fallback for cover art when MB has no image. Set
-DISCOGS_TOKEN to enable. Without it, the Discogs path skips cleanly.
+iTunes Search API is a free fallback for BOTH apple_music_url and cover art
+— no auth, single endpoint returns `collectionViewUrl` (the music.apple.com
+URL) and `artworkUrl100` (which we swap to 600x600 for crisp covers).
+
+Discogs is an optional fallback for cover art when MB and iTunes both miss.
+Set DISCOGS_TOKEN to enable. Without it, the Discogs path skips cleanly.
 We don't ask Discogs for Bandcamp URLs — Discogs doesn't store them.
 
 Rate limit policy:
@@ -25,6 +29,8 @@ Rate limit policy:
     share the same throttle.
   - Discogs: 60/min auth'd = 1 req/sec equivalent. Same throttle pattern
     via separate lock so a slow MB call doesn't block Discogs.
+  - iTunes: undocumented soft ceiling ~20/min per IP. Conservatively pace
+    at 2 req/sec — enough headroom for a 50-release crawl in 25s.
 
 Artist verification (added after a Dollar Diamonds release got matched
 to "Street Corner Symphonies Volume 12: 1960" because the title term
@@ -53,6 +59,7 @@ DISCOGS_BASE = "https://api.discogs.com"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
+ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 
 # Per MusicBrainz policy. We're polite-bot citizens; the rest of the
 # pipeline is also serialized via this lock to keep the total RPS in budget.
@@ -84,6 +91,13 @@ _SPOTIFY_TOKEN_LOCK = asyncio.Lock()
 _YOUTUBE_LOCK = asyncio.Lock()
 _YOUTUBE_LAST_AT = 0.0
 _YOUTUBE_MIN_INTERVAL = 0.1  # YouTube's per-second limits are generous
+
+# iTunes Search API. Free, no auth, no quota counter — but Apple has an
+# undocumented per-IP soft ceiling around 20 req/min. Pace at 2 req/sec
+# (0.5s min interval) which keeps a 50-release crawl under 30s.
+_ITUNES_LOCK = asyncio.Lock()
+_ITUNES_LAST_AT = 0.0
+_ITUNES_MIN_INTERVAL = 0.5
 
 
 # ── Artist-match verification ───────────────────────────────────────────
@@ -570,6 +584,78 @@ async def _youtube_search(
     return None
 
 
+# ── iTunes Search (free, no auth — both cover art + Apple Music URL) ───
+#
+# Apple's Search API is unauthenticated and returns both `collectionViewUrl`
+# (the music.apple.com URL we want as a listen target) and `artworkUrl100`
+# (cover image at 100x100) in one call. Since we get both for free, this
+# slot is doubly useful: a fallback for cover art AND a new listen-target
+# platform between Spotify and YouTube in the editorial preference chain.
+#
+# Artwork URLs are CDN-served at `.../100x100bb.jpg`. Replacing 100x100
+# with 600x600 returns the same image at higher resolution — same trick
+# the Apple Music web client uses.
+
+
+_ITUNES_ARTWORK_DIM_RE = re.compile(r"/\d+x\d+(bb)?\.(jpg|png)$")
+
+
+def _itunes_artwork_hires(artwork_url: str) -> str:
+    """Upgrade an iTunes artworkUrl100 to 600x600. Same CDN, just a
+    different size token in the path. Returns input unchanged if the
+    URL doesn't match the expected pattern."""
+    return _ITUNES_ARTWORK_DIM_RE.sub(r"/600x600\1.\2", artwork_url)
+
+
+async def _itunes_search(
+    http: AsyncSession, artist: str, title: str
+) -> tuple[str | None, str | None]:
+    """Search Apple's iTunes catalog for (artist, title).
+
+    Returns (apple_music_url, cover_art_url) — either or both may be None.
+
+    Free, no auth. Same `_artists_match` verification as MB/Spotify: the
+    response has an `artistName` field per result, so the check is direct.
+    """
+    await _throttle(_ITUNES_LOCK, "_ITUNES_LAST_AT", _ITUNES_MIN_INTERVAL)
+    try:
+        resp = await http.get(
+            ITUNES_SEARCH_URL,
+            params={
+                "term": f"{artist} {title}",
+                "entity": "album",
+                "limit": "5",
+            },
+            allow_redirects=True,
+        )
+        if resp.status_code != 200:
+            logger.info(
+                "iTunes search %r — %r returned %d", artist, title, resp.status_code
+            )
+            return None, None
+        data = resp.json()
+    except Exception as e:
+        logger.warning("iTunes search %r — %r raised: %s", artist, title, e)
+        return None, None
+
+    for item in data.get("results") or []:
+        candidate_artist = item.get("artistName") or ""
+        if not _artists_match(artist, candidate_artist):
+            logger.info(
+                "iTunes candidate rejected (artist mismatch): "
+                "input %r vs matched %r (album: %r)",
+                artist, candidate_artist, item.get("collectionName"),
+            )
+            continue
+        url = item.get("collectionViewUrl") or None
+        artwork = item.get("artworkUrl100") or None
+        if artwork:
+            artwork = _itunes_artwork_hires(artwork)
+        if url or artwork:
+            return url, artwork
+    return None, None
+
+
 # ── Public API ──────────────────────────────────────────────────────────
 
 
@@ -578,8 +664,8 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
 
     Schema:
         {"cover_art_url": str|None, "bandcamp_url": str|None,
-         "spotify_url": str|None, "youtube_url": str|None,
-         "mbid": str|None}
+         "spotify_url": str|None, "apple_music_url": str|None,
+         "youtube_url": str|None, "mbid": str|None}
 
     All fields may be None — that's a valid result for releases the public
     metadata layer doesn't index (small-label drops, mailing-list releases,
@@ -588,6 +674,7 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
     Fallback order, in priority:
       MB release-group + URL-rels   (cover_art_url + bandcamp_url + spotify_url)
       Spotify catalog search        (spotify_url, if MB didn't have one)
+      iTunes Search                 (apple_music_url + cover_art_url fallback)
       YouTube Data API search       (youtube_url, last-resort, quota-budgeted)
       Discogs                       (cover_art_url fallback only)
     """
@@ -595,6 +682,7 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
         "cover_art_url": None,
         "bandcamp_url": None,
         "spotify_url": None,
+        "apple_music_url": None,
         "youtube_url": None,
         "mbid": None,
     }
@@ -628,16 +716,34 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
             if not result["spotify_url"]:
                 result["spotify_url"] = await _spotify_search_album(http, artist, title)
 
+            # iTunes Search — free, no auth, gives us both apple_music_url
+            # AND a cover-art fallback in a single call. Fire whenever we
+            # still need either: missing Apple Music URL OR missing cover.
+            # The same response usefully fills both gaps, so the gating is
+            # "is there still anything iTunes might provide" rather than
+            # two separate decisions.
+            if not result["apple_music_url"] or not result["cover_art_url"]:
+                apple_url, apple_cover = await _itunes_search(http, artist, title)
+                if not result["apple_music_url"]:
+                    result["apple_music_url"] = apple_url
+                if not result["cover_art_url"]:
+                    result["cover_art_url"] = apple_cover
+
             # YouTube Data API — last-resort listen-target fallback. Only
-            # fires when we have no Bandcamp AND no Spotify URL for this
-            # release; otherwise the existing listen-URL chain already has
-            # a higher-quality target, and YouTube quota is precious
-            # (10K units/day, 100 per search).
-            if not result["bandcamp_url"] and not result["spotify_url"]:
+            # fires when we have no Bandcamp AND no Spotify AND no Apple
+            # Music URL for this release; otherwise the existing listen-URL
+            # chain already has a higher-quality target, and YouTube quota
+            # is precious (10K units/day, 100 per search).
+            if (
+                not result["bandcamp_url"]
+                and not result["spotify_url"]
+                and not result["apple_music_url"]
+            ):
                 result["youtube_url"] = await _youtube_search(http, artist, title)
 
-            # Discogs fallback — only when MB didn't find a cover, to save
-            # quota. The user gave us a Discogs token only as a fill-in.
+            # Discogs fallback — only when MB and iTunes both missed a
+            # cover, to save quota. The user gave us a Discogs token only
+            # as a fill-in.
             if not result["cover_art_url"]:
                 result["cover_art_url"] = await _discogs_cover(http, artist, title)
     except Exception as e:

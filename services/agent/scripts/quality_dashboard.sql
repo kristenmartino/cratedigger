@@ -81,9 +81,13 @@ SELECT
     COUNT(cover_art_url) AS with_cover,
     COUNT(bandcamp_url) AS with_bandcamp,
     COUNT(spotify_url) AS with_spotify,
+    COUNT(apple_music_url) AS with_apple_music,
+    COUNT(youtube_url) AS with_youtube,
     ROUND(100.0 * COUNT(cover_art_url) / NULLIF(COUNT(*), 0), 1) AS cover_pct,
     ROUND(100.0 * COUNT(bandcamp_url) / NULLIF(COUNT(*), 0), 1) AS bandcamp_pct,
-    ROUND(100.0 * COUNT(spotify_url) / NULLIF(COUNT(*), 0), 1) AS spotify_pct
+    ROUND(100.0 * COUNT(spotify_url) / NULLIF(COUNT(*), 0), 1) AS spotify_pct,
+    ROUND(100.0 * COUNT(apple_music_url) / NULLIF(COUNT(*), 0), 1) AS apple_music_pct,
+    ROUND(100.0 * COUNT(youtube_url) / NULLIF(COUNT(*), 0), 1) AS youtube_pct
 FROM releases
 WHERE first_seen_at > NOW() - INTERVAL '7 days';
 

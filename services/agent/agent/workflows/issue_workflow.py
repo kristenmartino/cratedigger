@@ -504,7 +504,8 @@ async def enrich_metadata_node(state: IssueState) -> dict:
             rows = await conn.fetch(
                 """
                 SELECT id::text, cover_art_url,
-                       bandcamp_url, spotify_url, youtube_url
+                       bandcamp_url, spotify_url,
+                       apple_music_url, youtube_url
                   FROM releases
                  WHERE id = ANY($1::uuid[])
                 """,
@@ -515,6 +516,7 @@ async def enrich_metadata_node(state: IssueState) -> dict:
                 "cover_art_url": row["cover_art_url"],
                 "bandcamp_url": row["bandcamp_url"],
                 "spotify_url": row["spotify_url"],
+                "apple_music_url": row["apple_music_url"],
                 "youtube_url": row["youtube_url"],
             }
 
@@ -533,9 +535,11 @@ async def enrich_metadata_node(state: IssueState) -> dict:
         rel_id = rel.get("id")
         existing = existing_map.get(rel_id, {}) if rel_id else {}
         # Anything already populated stays — we only ever fill gaps.
+        fields = ("cover_art_url", "bandcamp_url", "spotify_url",
+                  "apple_music_url", "youtube_url")
         before = {
             k: existing.get(k) or (rel.get(k) or None)
-            for k in ("cover_art_url", "bandcamp_url", "spotify_url", "youtube_url")
+            for k in fields
         }
         # Skip the network if both Bandcamp and a cover are already there —
         # those are the two fields the email + web rely on.
@@ -547,29 +551,28 @@ async def enrich_metadata_node(state: IssueState) -> dict:
             lookup = await lookup_release(rel.get("artist") or "", rel.get("title") or "")
 
         merged = dict(before)
-        for k in ("cover_art_url", "bandcamp_url", "spotify_url", "youtube_url"):
+        for k in fields:
             if not merged.get(k) and lookup.get(k):
                 merged[k] = lookup[k]
 
         # Persist whatever's new. COALESCE preserves any value we already
         # had if the lookup came back empty for that field.
-        if rel_id and any(
-            lookup.get(k) for k in
-            ("cover_art_url", "bandcamp_url", "spotify_url", "youtube_url")
-        ):
+        if rel_id and any(lookup.get(k) for k in fields):
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
                     UPDATE releases
-                       SET cover_art_url = COALESCE(releases.cover_art_url, $1),
-                           bandcamp_url  = COALESCE(releases.bandcamp_url, $2),
-                           spotify_url   = COALESCE(releases.spotify_url, $3),
-                           youtube_url   = COALESCE(releases.youtube_url, $4)
-                     WHERE id = $5::uuid
+                       SET cover_art_url   = COALESCE(releases.cover_art_url,   $1),
+                           bandcamp_url    = COALESCE(releases.bandcamp_url,    $2),
+                           spotify_url     = COALESCE(releases.spotify_url,     $3),
+                           apple_music_url = COALESCE(releases.apple_music_url, $4),
+                           youtube_url     = COALESCE(releases.youtube_url,     $5)
+                     WHERE id = $6::uuid
                     """,
                     lookup.get("cover_art_url"),
                     lookup.get("bandcamp_url"),
                     lookup.get("spotify_url"),
+                    lookup.get("apple_music_url"),
                     lookup.get("youtube_url"),
                     rel_id,
                 )
@@ -1092,7 +1095,7 @@ async def render_email_node(state: IssueState) -> dict:
                    r.prose, r.cover_art_url AS rec_cover_art_url,
                    rel.artist, rel.title AS release_title,
                    rel.cover_art_url AS rel_cover_art_url,
-                   rel.bandcamp_url, rel.spotify_url,
+                   rel.bandcamp_url, rel.spotify_url, rel.apple_music_url,
                    rel.youtube_url, rel.soundcloud_url, rel.url
               FROM recommendations r
               JOIN releases rel ON rel.id = r.release_id
@@ -1116,11 +1119,13 @@ async def render_email_node(state: IssueState) -> dict:
         # delivered a paywall. If neither Bandcamp nor Spotify is
         # available, omit the button rather than mislead.
         # Preference order is editorial: Bandcamp pays artists, Spotify
-        # is the popular default, YouTube is broadly accessible,
-        # SoundCloud catches niche/demo work.
+        # is the popular default, Apple Music is the runner-up paid
+        # streamer, YouTube is broadly accessible, SoundCloud catches
+        # niche/demo work.
         listen = (
             r["bandcamp_url"]
             or r["spotify_url"]
+            or r["apple_music_url"]
             or r["youtube_url"]
             or r["soundcloud_url"]
         )
