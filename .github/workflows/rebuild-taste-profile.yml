@@ -1,40 +1,38 @@
 name: rebuild taste profile
 
-# Rebuilds Kristen's taste_profile row from kristen_seed.json.
+# Rebuilds taste_profile rows from per-user seed files at
+# services/agent/data/seeds/<clerk_id>.json.
 #
 # Triggers:
-#   - workflow_dispatch  — manual fire (first-time activation, or after a
-#                          new artist/tag edit you want applied immediately)
-#   - push to main with changes to kristen_seed.json — automatic rebuild
-#     on any seed edit. No human "remember to re-seed" step.
+#   - workflow_dispatch with `clerk_id` input  — rebuild one user
+#   - push to main with changes under data/seeds/**           — rebuild --all
 #
 # Required repo secrets:
-#   DATABASE_URL    — same Neon connection string Railway uses + the
-#                     migrate workflow uses (PR #25)
-#   VOYAGE_API_KEY  — for embedding the seed artists; same key Railway
-#                     uses
+#   DATABASE_URL    — Neon connection string
+#   VOYAGE_API_KEY  — for embedding the seed artists
 #
-# Scope: ONLY rebuilds the taste_profiles row. Does NOT re-seed users,
-# sources, or issue fixtures. Safe to re-run any number of times — every
-# rebuild is an UPSERT against taste_profiles where user_id matches
-# Kristen's clerk_id-mapped UUID.
-#
-# Cost: one Voyage embedding call per seed artist (~30 artists at v1).
-# Trivial.
+# Scope: ONLY rebuilds taste_profiles rows. Does NOT re-seed users,
+# sources, or issue fixtures. Safe to re-run any number of times.
 
 on:
   workflow_dispatch:
+    inputs:
+      clerk_id:
+        description: "Clerk-mapped user id to rebuild (e.g. user_kristen_seed_v1). Leave blank to rebuild every seed file."
+        required: false
+        default: ""
+        type: string
   push:
     branches: [main]
     paths:
-      - "services/agent/data/kristen_seed.json"
+      - "services/agent/data/seeds/**"
       - "services/agent/scripts/rebuild_taste_profile.py"
       - ".github/workflows/rebuild-taste-profile.yml"
 
 jobs:
   rebuild:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: services/agent
@@ -48,15 +46,13 @@ jobs:
           cache-dependency-path: services/agent/requirements.txt
 
       - name: Install dependencies
-        # Full agent reqs — rebuild_taste_profile.py imports
-        # agent.ingestion.seed_profile which pulls in agent.embedder
-        # (voyageai), agent.db (asyncpg + pgvector), etc.
         run: pip install -r requirements.txt
 
-      - name: Rebuild taste profile
+      - name: Rebuild taste profile(s)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          CLERK_ID: ${{ github.event.inputs.clerk_id }}
         run: |
           set -e
           if [ -z "${DATABASE_URL:-}" ]; then
@@ -67,7 +63,16 @@ jobs:
             echo "::error::VOYAGE_API_KEY repo secret is not set"
             exit 1
           fi
-          python scripts/rebuild_taste_profile.py
+
+          # Manual fire with a clerk_id → rebuild just that user.
+          # Path-trigger (push) leaves CLERK_ID empty → rebuild --all.
+          if [ -n "${CLERK_ID}" ]; then
+            echo "Rebuilding profile for clerk_id=${CLERK_ID}"
+            python scripts/rebuild_taste_profile.py --clerk-id "${CLERK_ID}"
+          else
+            echo "Rebuilding every profile in data/seeds/"
+            python scripts/rebuild_taste_profile.py --all
+          fi
 
       - name: Write summary
         if: always()
@@ -75,12 +80,16 @@ jobs:
           {
             echo "## Rebuild taste profile"
             echo
-            echo "- Source: \`services/agent/data/kristen_seed.json\`"
-            echo "- Target row: \`taste_profiles\` for \`clerk_id=user_kristen_seed_v1\`"
-            echo "- Side effects: one upsert + ~30 Voyage embedding calls"
+            echo "- Source: \`services/agent/data/seeds/<clerk_id>.json\` files"
+            echo "- Target: \`taste_profiles\` rows in Neon"
+            if [ -n "${{ github.event.inputs.clerk_id }}" ]; then
+              echo "- Mode: single user (\`${{ github.event.inputs.clerk_id }}\`)"
+            else
+              echo "- Mode: rebuild all seed files (push-trigger)"
+            fi
             echo
             if [ "${{ job.status }}" = "success" ]; then
-              echo "Status: ✅ rebuilt — next Sunday cron will score against the new centroid"
+              echo "Status: ✅ rebuilt — next Sunday cron scores against the new centroid(s)"
             else
               echo "Status: ❌ failed — check the step log above"
             fi

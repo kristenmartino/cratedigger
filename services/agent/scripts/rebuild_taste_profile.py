@@ -1,34 +1,35 @@
-"""Rebuild the taste profile for Kristen's user from data/kristen_seed.json.
+"""Rebuild the taste profile for one user (or all users) from their seed file.
 
-Focused complement to seed.py:
-  - seed.py creates user + sources + issue fixtures + taste profile —
-    too much side-effect to safely re-run on every kristen_seed.json
-    edit.
-  - This script ONLY rebuilds the taste_profile row. No user creation,
-    no source upserts, no issue fixtures.
+Per-user seed files live at `services/agent/data/seeds/<clerk_id>.json` —
+filename-as-clerk_id keeps the routing implicit and lets git diffs scope
+per-user (PR for Alice's taste update touches one file, not a shared one).
 
-Side-effect surface:
-  - One SELECT on `users` to resolve user_id by clerk_id.
-  - One UPSERT on `taste_profiles`.
-  - One Voyage API call per artist in the seed list (build_profile_from_seed
-    embeds them and means the centroid).
+Modes:
+  --clerk-id user_alice  → rebuild that user's profile only
+  --all                  → enumerate every file in data/seeds/, rebuild each
 
-If clerk_id isn't found, exits non-zero — it means seed.py hasn't run
-yet (no user row). Run that first, then this.
+Either way: build_profile_from_seed embeds the seed artists via Voyage,
+then upsert_taste_profile updates the taste_profiles row in place. No
+other side effects — no user creation, no sources sync, no issue fixtures.
+
+If the seed file's named clerk_id doesn't have a row in `users`, the
+script errors with a clear "run scripts/add_user.py first" message.
 
 Requires:
   DATABASE_URL    — Neon connection string
   VOYAGE_API_KEY  — for embedding the seed artists
 
 Usage:
-  DATABASE_URL=... VOYAGE_API_KEY=... python scripts/rebuild_taste_profile.py
+  python scripts/rebuild_taste_profile.py --clerk-id user_kristen_seed_v1
+  python scripts/rebuild_taste_profile.py --all
 
-The repo's `.github/workflows/rebuild-taste-profile.yml` fires this on
-every push to main that touches `kristen_seed.json` (path-trigger) and
-also via workflow_dispatch for manual fires.
+CI workflow .github/workflows/rebuild-taste-profile.yml fires this on
+push-to-main changes to data/seeds/** (rebuilds --all) and on
+workflow_dispatch with an explicit clerk_id input.
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
@@ -53,28 +54,76 @@ logging.basicConfig(
 logger = logging.getLogger("cratedigger-agent.rebuild_taste_profile")
 
 
-# Same value as scripts/seed.py's KRISTEN_CLERK_ID. Single-user v1; when
-# v1.1 adds multi-user, this script becomes per-user (probably via a
-# clerk_id CLI arg).
-KRISTEN_CLERK_ID = "user_kristen_seed_v1"
-
-
-def find_seed_path() -> Path:
-    """Walk up from this script to find data/kristen_seed.json."""
+def find_seeds_dir() -> Path:
+    """Walk up from this script to find services/agent/data/seeds/."""
     start = Path(__file__).resolve()
     for parent in start.parents:
-        candidate = parent / "services" / "agent" / "data" / "kristen_seed.json"
+        candidate = parent / "services" / "agent" / "data" / "seeds"
         if candidate.exists():
             return candidate
     raise FileNotFoundError(
-        "Could not locate services/agent/data/kristen_seed.json by "
-        f"walking up from {start}."
+        f"Could not locate services/agent/data/seeds/ by walking up from {start}."
     )
 
 
+async def rebuild_one(pool, clerk_id: str, seed_path: Path) -> bool:
+    """Rebuild a single user's profile. Returns True on success, False on
+    a recoverable error (so --all can continue past per-user failures)."""
+    if not seed_path.exists():
+        logger.error("No seed file at %s (clerk_id=%s)", seed_path, clerk_id)
+        return False
+
+    seed = json.loads(seed_path.read_text())
+    n_artists = len(seed.get("artists", []))
+    n_tags = len(seed.get("tags", []))
+    logger.info(
+        "Rebuilding %s from %s (%d artists, %d tags)",
+        clerk_id, seed_path.name, n_artists, n_tags,
+    )
+
+    user_id = await pool.fetchval(
+        "SELECT id::text FROM users WHERE clerk_id = $1",
+        clerk_id,
+    )
+    if not user_id:
+        logger.error(
+            "No user with clerk_id=%r. Run scripts/add_user.py first to "
+            "create the user row, then re-run this.",
+            clerk_id,
+        )
+        return False
+
+    try:
+        profile = await build_profile_from_seed(seed)
+    except Exception as e:
+        logger.error("build_profile_from_seed failed for %s: %s", clerk_id, e)
+        return False
+
+    try:
+        await upsert_taste_profile(pool, user_id, profile)
+    except Exception as e:
+        logger.error("upsert_taste_profile failed for %s: %s", clerk_id, e)
+        return False
+
+    logger.info("Rebuilt taste profile for %s (user_id=%s).", clerk_id, user_id)
+    return True
+
+
 async def main() -> int:
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--clerk-id",
+        help="Clerk-mapped user id whose seed file (data/seeds/<id>.json) to rebuild",
+    )
+    group.add_argument(
+        "--all",
+        action="store_true",
+        help="Rebuild every seed file under data/seeds/",
+    )
+    args = parser.parse_args()
+
+    if not os.environ.get("DATABASE_URL"):
         logger.error("DATABASE_URL not set")
         return 1
     if not os.environ.get("VOYAGE_API_KEY"):
@@ -82,54 +131,38 @@ async def main() -> int:
         return 1
 
     try:
-        seed_path = find_seed_path()
+        seeds_dir = find_seeds_dir()
     except FileNotFoundError as e:
         logger.error("%s", e)
         return 1
 
-    seed = json.loads(seed_path.read_text())
-    n_artists = len(seed.get("artists", []))
-    n_tags = len(seed.get("tags", []))
-    logger.info(
-        "Rebuilding profile from %s (%d artists, %d tags)",
-        seed_path, n_artists, n_tags,
-    )
-
     await init_pool()
+    failures = 0
     try:
         pool = await get_pool()
 
-        user_id = await pool.fetchval(
-            "SELECT id::text FROM users WHERE clerk_id = $1",
-            KRISTEN_CLERK_ID,
-        )
-        if not user_id:
-            logger.error(
-                "No user with clerk_id=%r. Run scripts/seed.py first to "
-                "create the user row, then re-run this.",
-                KRISTEN_CLERK_ID,
-            )
-            return 1
-
-        try:
-            profile = await build_profile_from_seed(seed)
-        except Exception as e:
-            logger.error("build_profile_from_seed failed: %s", e)
-            return 1
-
-        try:
-            await upsert_taste_profile(pool, user_id, profile)
-        except Exception as e:
-            logger.error("upsert_taste_profile failed: %s", e)
-            return 1
-
-        logger.info(
-            "Rebuilt taste profile for %s (user_id=%s).",
-            KRISTEN_CLERK_ID, user_id,
-        )
+        if args.clerk_id:
+            seed_path = seeds_dir / f"{args.clerk_id}.json"
+            ok = await rebuild_one(pool, args.clerk_id, seed_path)
+            if not ok:
+                failures += 1
+        else:
+            seed_paths = sorted(seeds_dir.glob("*.json"))
+            if not seed_paths:
+                logger.warning("No seed files found in %s — nothing to do.", seeds_dir)
+                return 0
+            logger.info("Rebuilding %d profiles from %s", len(seed_paths), seeds_dir)
+            for path in seed_paths:
+                clerk_id = path.stem  # filename without .json
+                ok = await rebuild_one(pool, clerk_id, path)
+                if not ok:
+                    failures += 1
     finally:
         await close_pool()
 
+    if failures:
+        logger.error("%d profile(s) failed to rebuild", failures)
+        return 1
     return 0
 
 

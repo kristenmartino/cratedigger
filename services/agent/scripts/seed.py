@@ -115,7 +115,9 @@ async def seed_user_and_profile(pool) -> str:
     )
     logger.info("Seeded user %s (%s)", KRISTEN_EMAIL, user_id)
 
-    seed = json.loads((DATA_DIR / "kristen_seed.json").read_text())
+    seed = json.loads(
+        (DATA_DIR / "seeds" / f"{KRISTEN_CLERK_ID}.json").read_text()
+    )
     profile = await build_profile_from_seed(seed)
     await upsert_taste_profile(pool, user_id, profile)
     logger.info(
