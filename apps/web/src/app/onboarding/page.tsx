@@ -58,9 +58,9 @@ function OnboardingShell() {
 
       <div className="mt-10 font-body text-[15px] leading-relaxed text-ink-soft space-y-4 max-w-prose mx-auto">
         <p>
-          Drop the artists you actually listen to — not the ones you wish you
-          did. Twenty or so is plenty. We use them to find adjacent music
-          worth your time.
+          Paste a Spotify playlist you actually listen to, or just drop the
+          artists in by hand. Twenty or so is plenty. We use them to find
+          adjacent music worth your time.
         </p>
         <p>
           Then pick the genres that feel honest. You can refine all of this
