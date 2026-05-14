@@ -33,6 +33,10 @@ from agent.batch_poller import run_batch_poller
 from agent.config import settings
 from agent.db import close_pool, get_pool, init_pool
 from agent.friday_drop import deliver_friday_drops_for_user
+from agent.ingestion.seed_profile import (
+    build_profile_from_seed,
+    upsert_taste_profile,
+)
 from agent.workflows.issue_workflow import IssueState, issue_pipeline
 
 logger = logging.getLogger("cratedigger-agent.server")
@@ -134,6 +138,7 @@ async def root():
             "health": "GET /health",
             "run_issue": "POST /v1/run-issue",
             "friday_drop": "POST /v1/friday-drop",
+            "build_taste_profile": "POST /v1/build-taste-profile",
         },
     }
 
@@ -240,4 +245,77 @@ async def friday_drop(
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=summary,
+    )
+
+
+@app.post(
+    "/v1/build-taste-profile",
+    summary="Embed seed artists + compute taste centroid for a user",
+)
+async def build_taste_profile(
+    request: Request,
+    x_pipeline_key: str | None = Header(default=None, alias="X-Pipeline-Key"),
+):
+    """Read taste_profiles.seed for the given user, run it through
+    build_profile_from_seed (Voyage embedding + tag derivation), and
+    upsert the centroid + tag weights into the same row.
+
+    Called by the web app's /api/onboarding handler after a new user
+    submits their seed. Idempotent: re-running with the same seed
+    produces the same centroid and overwrites the prior row.
+
+    Runs synchronously — the Voyage call is one round-trip and the
+    caller fires-and-forgets anyway, so there's no batch to manage.
+    """
+    _verify_pipeline_key(x_pipeline_key)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id = body.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id required",
+        )
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT seed::text AS seed FROM taste_profiles WHERE user_id = $1::uuid",
+        user_id,
+    )
+    if row is None or not row["seed"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No seed found for user_id={user_id}",
+        )
+
+    import json
+    try:
+        seed = json.loads(row["seed"])
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stored seed is not valid JSON",
+        )
+
+    try:
+        profile = await build_profile_from_seed(seed)
+        await upsert_taste_profile(pool, user_id, profile)
+    except Exception as e:
+        logger.error("build_taste_profile failed for %s: %s", user_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Profile build failed: {e}",
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "user_id": user_id,
+            "n_artists": len(seed.get("artists", [])),
+            "n_tags": len(seed.get("tags", [])),
+        },
     )

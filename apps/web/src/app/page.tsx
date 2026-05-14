@@ -1,16 +1,48 @@
 /**
  * Landing / latest-issue redirect.
  *
- * Per SPEC.md §6 the root should redirect to `/issue/[latest]`. Until the DB
- * has issues, we render a simple welcome with the wordmark.
- *
- * Once the seed script has run, replace this with:
- *   redirect(`/issue/${latestIssueNumber}`);
+ * Behavior:
+ *   - Not signed in       → show wordmark + invitation to sign in
+ *   - Signed in, no profile → redirect to /onboarding (taste-seed capture)
+ *   - Signed in, has profile → show wordmark + "your first issue ships
+ *     Sunday" copy (will swap to /issue/[latest] redirect once N≥1 exists)
  */
+import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
+import { eq } from "drizzle-orm";
+import { db, schema } from "@cratedigger/db";
 import { Wordmark } from "@/components/Wordmark";
 import { AuthButtons } from "@/components/AuthButtons";
 
-export default function HomePage() {
+const clerkPk = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const clerkEnabled = !!clerkPk && clerkPk.startsWith("pk_");
+
+export default async function HomePage() {
+  if (clerkEnabled) {
+    const { userId } = await auth();
+    if (userId) {
+      // Look up our DB user row + whether their taste profile exists.
+      // If signed in but no profile → bounce to /onboarding.
+      const rows = await db
+        .select({
+          userId: schema.users.id,
+          hasProfile: schema.tasteProfiles.id,
+        })
+        .from(schema.users)
+        .leftJoin(
+          schema.tasteProfiles,
+          eq(schema.tasteProfiles.userId, schema.users.id),
+        )
+        .where(eq(schema.users.clerkId, userId))
+        .limit(1);
+      const row = rows[0];
+      // Webhook hasn't fired yet OR taste profile not set up.
+      if (!row || !row.hasProfile) {
+        redirect("/onboarding");
+      }
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center relative">
       <div className="absolute top-6 right-6">
