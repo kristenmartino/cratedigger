@@ -16,6 +16,7 @@
 import { db, schema } from "@cratedigger/db";
 import { and, eq, ne } from "drizzle-orm";
 import { Markdown } from "@/components/Markdown";
+import { buildListenLinks } from "@/lib/listen-links";
 
 type PageProps = {
   params: Promise<{ number: string }>;
@@ -109,20 +110,13 @@ export default async function IssuePage({ params }: PageProps) {
         <div className="mt-20 space-y-16">
           {recs.map((rec) => {
             const cover = rec.recCoverArtUrl || rec.relCoverArtUrl;
-            // Direct-audio only; no source-URL fallback. Some source pages
-            // (Aquarium Drunkard articles, indie shop product pages) gate
-            // behind login walls — better to omit the Listen button than
-            // promise audio and deliver a paywall.
-            // Editorial preference order: Bandcamp pays artists, Spotify
-            // is the popular default, Apple Music is the runner-up paid
-            // streamer, YouTube is broadly accessible, SoundCloud catches
-            // niche/demo work.
-            const listen =
-              rec.bandcampUrl ||
-              rec.spotifyUrl ||
-              rec.appleMusicUrl ||
-              rec.youtubeUrl ||
-              rec.soundcloudUrl;
+            // All available platforms appear as an inline link strip in
+            // editorial preference order (Bandcamp → Spotify → Apple →
+            // YouTube → SoundCloud). Quieter than a single CTA button
+            // and respects reader preference about where to listen.
+            // No source-URL fallback — some article pages gate behind
+            // login walls (Aquarium Drunkard etc.).
+            const links = buildListenLinks(rec);
             return (
               <section
                 key={`${rec.position}-${rec.artist}-${rec.releaseTitle}`}
@@ -148,15 +142,25 @@ export default async function IssuePage({ params }: PageProps) {
                 <p className="mt-4 font-body text-editor-note text-ink-soft">
                   <Markdown>{rec.prose}</Markdown>
                 </p>
-                {listen && (
-                  <a
-                    href={listen}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-5 inline-block bg-ink text-paper font-mono text-[11px] uppercase tracking-[0.22em] px-[18px] py-[10px] hover:opacity-80 transition"
-                  >
-                    Listen ↗
-                  </a>
+                {links.length > 0 && (
+                  <p className="mt-5 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-soft">
+                    Listen:{" "}
+                    {links.map((l, i) => (
+                      <span key={l.platform}>
+                        {i > 0 && (
+                          <span className="mx-2 text-ink-faint">·</span>
+                        )}
+                        <a
+                          href={l.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-ink underline underline-offset-2 hover:text-coral transition-colors"
+                        >
+                          {l.platform} ↗
+                        </a>
+                      </span>
+                    ))}
+                  </p>
                 )}
               </section>
             );

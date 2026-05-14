@@ -141,7 +141,8 @@ def build_issue_mjml(
               "artist": str,
               "release_title": str,
               "cover_art_url": str | None,
-              "listen_url": str | None,  # bandcamp_url || spotify_url || url
+              "listen_links": list[{platform: str, url: str}],
+              "listen_url": str | None,  # back-compat single-winner
             }, ...
           ],
         }
@@ -236,7 +237,12 @@ def _render_recommendation(rec: dict[str, Any]) -> str:
     release_title = _esc(rec.get("release_title") or "")
     prose_html = _md_inline(rec.get("prose") or "")
     cover_art_url = rec.get("cover_art_url")
-    listen_url = rec.get("listen_url")
+    listen_links = rec.get("listen_links") or []
+    # Back-compat: if a caller passes only listen_url (single-winner
+    # legacy shape), synthesize a one-platform list so the renderer
+    # still produces output.
+    if not listen_links and rec.get("listen_url"):
+        listen_links = [{"platform": "Listen", "url": rec["listen_url"]}]
 
     cover_block = ""
     if cover_art_url:
@@ -244,17 +250,7 @@ def _render_recommendation(rec: dict[str, Any]) -> str:
                   width="320px" padding-bottom="20px" border-radius="2px" />
 """
 
-    listen_block = ""
-    if listen_url:
-        listen_block = f"""        <mj-button href="{_esc(listen_url)}"
-                   background-color="#15191D" color="#EFE4CC"
-                   font-family="DM Mono, monospace" font-size="11px"
-                   letter-spacing="0.22em" text-transform="uppercase"
-                   border-radius="0" inner-padding="10px 18px" align="left"
-                   padding-top="18px" padding-left="0">
-          Listen ↗
-        </mj-button>
-"""
+    listen_block = _render_listen_strip(listen_links, padding_top=18)
 
     return f"""    <mj-section padding="32px 24px" border-top="1px solid rgba(21,25,29,0.16)">
       <mj-column>
@@ -270,6 +266,48 @@ def _render_recommendation(rec: dict[str, Any]) -> str:
         <mj-text css-class="editor" padding-top="14px">{prose_html}</mj-text>
 {listen_block}      </mj-column>
     </mj-section>"""
+
+
+def _render_listen_strip(
+    listen_links: list[dict[str, str]],
+    padding_top: int = 18,
+) -> str:
+    """Compact platform-link strip. Replaces the previous single Listen
+    button now that records routinely have 2-3 platforms.
+
+    Renders as one mj-text block: 'LISTEN: Bandcamp ↗ · Spotify ↗ · ...'
+    Each platform is an inline anchor; missing platforms are skipped.
+    Returns empty string when listen_links is empty (caller's gating).
+
+    Style notes:
+      - Same DM Mono / uppercase / coral-on-paper aesthetic as the
+        category + source-attr labels (intentional — these are receipts,
+        not CTAs). The big single black button felt too marketing-y
+        once we had multiple options.
+      - Inline anchors use color: #15191D (ink) which most clients
+        render as a visible underline by default.
+    """
+    if not listen_links:
+        return ""
+
+    parts = []
+    for link in listen_links:
+        platform = _esc(link.get("platform") or "")
+        url = _esc(link.get("url") or "")
+        if not platform or not url:
+            continue
+        parts.append(
+            f'<a href="{url}" style="color:#15191D;text-decoration:underline;">'
+            f"{platform} ↗</a>"
+        )
+    if not parts:
+        return ""
+
+    inner = " &nbsp;·&nbsp; ".join(parts)
+    return f"""        <mj-text font-family="DM Mono, monospace" font-size="11px" letter-spacing="0.18em" text-transform="uppercase" color="#1E4543" padding-top="{padding_top}px">
+          Listen: {inner}
+        </mj-text>
+"""
 
 
 # ── Friday drop template ────────────────────────────────────────────────
@@ -289,7 +327,8 @@ def build_friday_drop_mjml(drop: dict[str, Any]) -> str:
           "source_attr": str,
           "prose": str,
           "cover_art_url": str | None,
-          "listen_url": str | None,
+          "listen_links": list[{platform: str, url: str}],
+          "listen_url": str | None,  # back-compat single-winner
         }
     """
     issue_number = int(drop["issue_number"])
@@ -298,7 +337,6 @@ def build_friday_drop_mjml(drop: dict[str, Any]) -> str:
     source_attr = _esc(drop.get("source_attr") or "")
     prose_html = _md_inline(drop.get("prose") or "")
     cover_art_url = drop.get("cover_art_url")
-    listen_url = drop.get("listen_url")
 
     cover_block = ""
     if cover_art_url:
@@ -306,17 +344,10 @@ def build_friday_drop_mjml(drop: dict[str, Any]) -> str:
                   width="360px" padding-bottom="22px" border-radius="2px" />
 """
 
-    listen_block = ""
-    if listen_url:
-        listen_block = f"""        <mj-button href="{_esc(listen_url)}"
-                   background-color="#15191D" color="#EFE4CC"
-                   font-family="DM Mono, monospace" font-size="11px"
-                   letter-spacing="0.22em" text-transform="uppercase"
-                   border-radius="0" inner-padding="10px 18px" align="left"
-                   padding-top="22px" padding-left="0">
-          Listen ↗
-        </mj-button>
-"""
+    listen_links = drop.get("listen_links") or []
+    if not listen_links and drop.get("listen_url"):
+        listen_links = [{"platform": "Listen", "url": drop["listen_url"]}]
+    listen_block = _render_listen_strip(listen_links, padding_top=22)
 
     return f"""<mjml>
   <mj-head>
