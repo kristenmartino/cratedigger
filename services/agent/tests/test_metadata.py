@@ -23,6 +23,7 @@ from agent.sources.metadata import (
     _normalize_artist,
     _parse_mb_urls,
     _spotify_album_artist_name,
+    _youtube_candidate_artist,
     lookup_release,
 )
 
@@ -250,6 +251,7 @@ def test_lookup_release_empty_inputs_short_circuit():
         "cover_art_url": None,
         "bandcamp_url": None,
         "spotify_url": None,
+        "youtube_url": None,
         "mbid": None,
     }
 
@@ -300,3 +302,51 @@ def test_spotify_artist_name_tolerates_missing_name_field():
         ],
     }
     assert _spotify_album_artist_name(album) == "Burial"
+
+
+# ── _youtube_candidate_artist ───────────────────────────────────────────
+
+
+def test_youtube_artist_from_channel_only():
+    """Many albums upload by an aggregator with the artist in the channel
+    name and a track listing in the video title — the artist might appear
+    only on the channel side."""
+    snippet = {
+        "channelTitle": "Burial",
+        "title": "Untrue [Full Album]",
+    }
+    out = _youtube_candidate_artist(snippet)
+    assert "Burial" in out
+    assert "Untrue" in out
+
+
+def test_youtube_artist_from_video_title_only():
+    """Just as often, uploaded by a third-party channel ('AlbumUploads')
+    with the artist embedded in the video title."""
+    snippet = {
+        "channelTitle": "Full Albums HD",
+        "title": "Burial - Untrue (2007)",
+    }
+    out = _youtube_candidate_artist(snippet)
+    assert "Burial" in out
+    assert "Full Albums HD" in out
+
+
+def test_youtube_artist_combines_both_sides():
+    """The combined string is what _artists_match runs over — it has the
+    whole-word substring rule so 'Burial' as a token in either side
+    counts."""
+    snippet = {
+        "channelTitle": "Hyperdub Records",
+        "title": "Burial — Untrue (Full Album)",
+    }
+    out = _youtube_candidate_artist(snippet)
+    # Both halves present so the rule has the maximum signal.
+    assert "Hyperdub" in out and "Burial" in out
+
+
+def test_youtube_candidate_empty_when_snippet_blank():
+    """No channel + no title → empty string (rather than 'None None')."""
+    assert _youtube_candidate_artist({}) == ""
+    assert _youtube_candidate_artist({"channelTitle": "", "title": ""}) == ""
+    assert _youtube_candidate_artist({"channelTitle": None, "title": None}) == ""
