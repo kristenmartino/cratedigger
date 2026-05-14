@@ -503,7 +503,8 @@ async def enrich_metadata_node(state: IssueState) -> dict:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id::text, cover_art_url, bandcamp_url, spotify_url
+                SELECT id::text, cover_art_url,
+                       bandcamp_url, spotify_url, youtube_url
                   FROM releases
                  WHERE id = ANY($1::uuid[])
                 """,
@@ -514,6 +515,7 @@ async def enrich_metadata_node(state: IssueState) -> dict:
                 "cover_art_url": row["cover_art_url"],
                 "bandcamp_url": row["bandcamp_url"],
                 "spotify_url": row["spotify_url"],
+                "youtube_url": row["youtube_url"],
             }
 
     # Bound parallelism. The MB throttle is global so we won't actually
@@ -533,7 +535,7 @@ async def enrich_metadata_node(state: IssueState) -> dict:
         # Anything already populated stays — we only ever fill gaps.
         before = {
             k: existing.get(k) or (rel.get(k) or None)
-            for k in ("cover_art_url", "bandcamp_url", "spotify_url")
+            for k in ("cover_art_url", "bandcamp_url", "spotify_url", "youtube_url")
         }
         # Skip the network if both Bandcamp and a cover are already there —
         # those are the two fields the email + web rely on.
@@ -545,25 +547,30 @@ async def enrich_metadata_node(state: IssueState) -> dict:
             lookup = await lookup_release(rel.get("artist") or "", rel.get("title") or "")
 
         merged = dict(before)
-        for k in ("cover_art_url", "bandcamp_url", "spotify_url"):
+        for k in ("cover_art_url", "bandcamp_url", "spotify_url", "youtube_url"):
             if not merged.get(k) and lookup.get(k):
                 merged[k] = lookup[k]
 
         # Persist whatever's new. COALESCE preserves any value we already
         # had if the lookup came back empty for that field.
-        if rel_id and any(lookup.get(k) for k in ("cover_art_url", "bandcamp_url", "spotify_url")):
+        if rel_id and any(
+            lookup.get(k) for k in
+            ("cover_art_url", "bandcamp_url", "spotify_url", "youtube_url")
+        ):
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
                     UPDATE releases
                        SET cover_art_url = COALESCE(releases.cover_art_url, $1),
                            bandcamp_url  = COALESCE(releases.bandcamp_url, $2),
-                           spotify_url   = COALESCE(releases.spotify_url, $3)
-                     WHERE id = $4::uuid
+                           spotify_url   = COALESCE(releases.spotify_url, $3),
+                           youtube_url   = COALESCE(releases.youtube_url, $4)
+                     WHERE id = $5::uuid
                     """,
                     lookup.get("cover_art_url"),
                     lookup.get("bandcamp_url"),
                     lookup.get("spotify_url"),
+                    lookup.get("youtube_url"),
                     rel_id,
                 )
 

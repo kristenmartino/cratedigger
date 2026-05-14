@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
 
+    # Optional. YouTube Data API v3 key. Used as a catalog fallback for
+    # releases where article-parsing + Spotify search both came up empty.
+    # Free tier: 10,000 quota units/day; search.list costs 100 units so
+    # ~100 searches/day. Skip-already-enriched in enrich_metadata keeps
+    # us well under quota — we only fire YouTube search when bandcamp_url,
+    # spotify_url, AND youtube_url are all empty for a release.
+    # Generate at https://console.cloud.google.com → enable YouTube Data API.
+    youtube_api_key: str = ""
+
     # Public web app base URL. Used by the email template for the
     # "Read in browser" anchor pointing at /issue/<n>. Defaults to the
     # production domain; override locally for preview deploys.

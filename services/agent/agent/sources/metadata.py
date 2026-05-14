@@ -52,6 +52,7 @@ CAA_BASE = "https://coverartarchive.org"
 DISCOGS_BASE = "https://api.discogs.com"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_BASE = "https://api.spotify.com/v1"
+YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 
 # Per MusicBrainz policy. We're polite-bot citizens; the rest of the
 # pipeline is also serialized via this lock to keep the total RPS in budget.
@@ -75,6 +76,14 @@ _SPOTIFY_MIN_INTERVAL = 0.1
 # share the same token instead of each fetching their own.
 _SPOTIFY_TOKEN: dict[str, Any] | None = None
 _SPOTIFY_TOKEN_LOCK = asyncio.Lock()
+
+# YouTube Data API v3. Free tier 10K units/day; search.list = 100 units
+# so ~100 searches/day. We only fire YouTube search as a last-resort
+# catalog fallback (article-parse + MB rels + Spotify search all came
+# up empty for the release), so we stay well under quota.
+_YOUTUBE_LOCK = asyncio.Lock()
+_YOUTUBE_LAST_AT = 0.0
+_YOUTUBE_MIN_INTERVAL = 0.1  # YouTube's per-second limits are generous
 
 
 # ── Artist-match verification ───────────────────────────────────────────
@@ -473,6 +482,94 @@ def _spotify_album_artist_name(album: dict[str, Any]) -> str:
     return " ".join(a.get("name") or "" for a in artists).strip()
 
 
+# ── YouTube Data API (last-resort catalog fallback) ────────────────────
+#
+# Different verification problem from Spotify: YouTube videos have free-text
+# titles like "Burial — Untrue (Full Album HD)" with the artist often
+# embedded but no structured `artists[]` field. We verify by checking if
+# the input artist appears as a whole word in either the video title or
+# the channel title using the same `_artists_match` rule.
+#
+# Bias toward full-album uploads with the `q=` term, but YouTube ranks by
+# its own relevance signal so we still check the top few results and pick
+# the first that verifies on artist.
+
+
+def _youtube_candidate_artist(snippet: dict[str, Any]) -> str:
+    """Combine channel + video title into one string for artist-match
+    verification. YouTube doesn't have a structured `artist` field on
+    videos, so we hand the whole label string to _artists_match and
+    let the whole-word substring rule decide if the input artist is
+    referenced anywhere.
+
+    Concatenating with a space joiner means the whole-word rule never
+    collapses "Fred Again" against "FredAgain" — same protection as
+    elsewhere.
+    """
+    return " ".join((
+        snippet.get("channelTitle") or "",
+        snippet.get("title") or "",
+    )).strip()
+
+
+async def _youtube_search(
+    http: AsyncSession, artist: str, title: str
+) -> str | None:
+    """Search YouTube for a video matching (artist, title). Return a
+    canonical youtube.com/watch?v=ID URL, or None on miss/error.
+
+    Skipped if YOUTUBE_API_KEY is unset. Each call costs 100 quota units
+    (10K/day free tier) so this is a last-resort fallback — only invoke
+    when bandcamp/spotify/article-parsing all came up empty.
+    """
+    key = settings.youtube_api_key
+    if not key:
+        return None
+
+    await _throttle(_YOUTUBE_LOCK, "_YOUTUBE_LAST_AT", _YOUTUBE_MIN_INTERVAL)
+    try:
+        # `q` is a free-text query; "album" biases toward full uploads.
+        # `type=video` filters out channels and playlists.
+        resp = await http.get(
+            f"{YOUTUBE_API_BASE}/search",
+            params={
+                "part": "snippet",
+                "q": f"{artist} {title} album",
+                "type": "video",
+                "maxResults": "5",
+                "key": key,
+            },
+            allow_redirects=True,
+        )
+        if resp.status_code != 200:
+            logger.info(
+                "YouTube search %r — %r returned %d: %s",
+                artist, title, resp.status_code, resp.text[:200],
+            )
+            return None
+        data = resp.json()
+    except Exception as e:
+        logger.warning("YouTube search %r — %r raised: %s", artist, title, e)
+        return None
+
+    for item in data.get("items") or []:
+        video_id = (item.get("id") or {}).get("videoId")
+        if not video_id:
+            continue
+        snippet = item.get("snippet") or {}
+        candidate_artist = _youtube_candidate_artist(snippet)
+        if not _artists_match(artist, candidate_artist):
+            logger.info(
+                "YouTube candidate rejected (artist mismatch): "
+                "input %r vs matched %r",
+                artist, candidate_artist,
+            )
+            continue
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+    return None
+
+
 # ── Public API ──────────────────────────────────────────────────────────
 
 
@@ -481,16 +578,24 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
 
     Schema:
         {"cover_art_url": str|None, "bandcamp_url": str|None,
-         "spotify_url": str|None, "mbid": str|None}
+         "spotify_url": str|None, "youtube_url": str|None,
+         "mbid": str|None}
 
     All fields may be None — that's a valid result for releases the public
     metadata layer doesn't index (small-label drops, mailing-list releases,
     super-fresh records that haven't propagated yet).
+
+    Fallback order, in priority:
+      MB release-group + URL-rels   (cover_art_url + bandcamp_url + spotify_url)
+      Spotify catalog search        (spotify_url, if MB didn't have one)
+      YouTube Data API search       (youtube_url, last-resort, quota-budgeted)
+      Discogs                       (cover_art_url fallback only)
     """
     result: dict[str, str | None] = {
         "cover_art_url": None,
         "bandcamp_url": None,
         "spotify_url": None,
+        "youtube_url": None,
         "mbid": None,
     }
     if not (artist and title):
@@ -522,6 +627,14 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
             # produced a verified Spotify URL.
             if not result["spotify_url"]:
                 result["spotify_url"] = await _spotify_search_album(http, artist, title)
+
+            # YouTube Data API — last-resort listen-target fallback. Only
+            # fires when we have no Bandcamp AND no Spotify URL for this
+            # release; otherwise the existing listen-URL chain already has
+            # a higher-quality target, and YouTube quota is precious
+            # (10K units/day, 100 per search).
+            if not result["bandcamp_url"] and not result["spotify_url"]:
+                result["youtube_url"] = await _youtube_search(http, artist, title)
 
             # Discogs fallback — only when MB didn't find a cover, to save
             # quota. The user gave us a Discogs token only as a fill-in.
