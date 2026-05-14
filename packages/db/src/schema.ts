@@ -148,6 +148,8 @@ export const releases = pgTable(
     url: text("url"), // canonical (Bandcamp preferred)
     bandcampUrl: text("bandcamp_url"),
     spotifyUrl: text("spotify_url"),
+    youtubeUrl: text("youtube_url"),
+    soundcloudUrl: text("soundcloud_url"),
     coverArtUrl: text("cover_art_url"), // Bandcamp/Discogs/MB; SVG fallback handled in render layer
     embedding: vector("embedding", { dimensions: 1024 }),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),

@@ -358,6 +358,118 @@ async def normalize_releases_node(state: IssueState) -> dict:
     return {"new_releases": new_releases}
 
 
+async def extract_media_urls_node(state: IssueState) -> dict:
+    """Fetch each release's source article and pull out embedded Bandcamp /
+    Spotify / YouTube / SoundCloud URLs.
+
+    The article IS about the release, so embedded media is the canonical
+    listen target — higher confidence than catalog search (which is why
+    this runs BEFORE enrich_metadata). MB / Spotify-search fill in
+    whatever the article didn't surface.
+
+    Skip-already-enriched: if a release already has at least one of
+    bandcamp_url / spotify_url / youtube_url / soundcloud_url populated
+    in `releases`, skip the fetch. Repeat crawls of the same release
+    pay no HTTP cost — the article gets parsed exactly once per release.
+
+    Rate / cost: one HTTP fetch per unenriched release. Concurrency 5;
+    typical crawl adds ~30-60s for the cold case. Subsequent runs hit
+    the skip on every repeat release.
+    """
+    from agent.article_media import extract_media_urls
+
+    run_id = state["agent_run_id"]
+    new_releases = state.get("new_releases", [])
+    if not new_releases:
+        return {}
+
+    await update_agent_run(run_id, current_step="extracting_media")
+
+    pool = await get_pool()
+
+    # Pull current state of all four media URLs for every release so we
+    # only fetch articles for the truly-empty ones. One round-trip vs N.
+    release_ids = [r["id"] for r in new_releases if r.get("id")]
+    existing_map: dict[str, dict[str, str | None]] = {}
+    if release_ids:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id::text,
+                       bandcamp_url, spotify_url,
+                       youtube_url, soundcloud_url
+                  FROM releases
+                 WHERE id = ANY($1::uuid[])
+                """,
+                release_ids,
+            )
+        for row in rows:
+            existing_map[row["id"]] = {
+                k: row[k] for k in
+                ("bandcamp_url", "spotify_url", "youtube_url", "soundcloud_url")
+            }
+
+    sem = asyncio.Semaphore(5)
+    n_fetched = 0
+    n_found_total = 0
+
+    async def fetch_one(rel: dict) -> dict:
+        nonlocal n_fetched, n_found_total
+        rel_id = rel.get("id")
+        article_url = rel.get("url")
+        existing = existing_map.get(rel_id, {}) if rel_id else {}
+
+        # Skip if ANY platform URL is already populated. Article parsing
+        # is bonus signal; if the upstream pipeline already gave us a
+        # listen target, don't burn a fetch.
+        if any(existing.get(k) for k in ("bandcamp_url", "spotify_url", "youtube_url", "soundcloud_url")):
+            return {**rel, **existing}
+
+        if not article_url:
+            return rel
+
+        async with sem:
+            n_fetched += 1
+            found = await extract_media_urls(article_url)
+
+        new_fields = {k: v for k, v in found.items() if v}
+        if not new_fields:
+            return rel
+
+        n_found_total += len(new_fields)
+
+        # Persist whatever we found. COALESCE preserves any pre-existing
+        # value (defensive — should be None here since we skipped above,
+        # but doesn't hurt).
+        if rel_id:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE releases
+                       SET bandcamp_url   = COALESCE(releases.bandcamp_url,   $1),
+                           spotify_url    = COALESCE(releases.spotify_url,    $2),
+                           youtube_url    = COALESCE(releases.youtube_url,    $3),
+                           soundcloud_url = COALESCE(releases.soundcloud_url, $4)
+                     WHERE id = $5::uuid
+                    """,
+                    found.get("bandcamp_url"),
+                    found.get("spotify_url"),
+                    found.get("youtube_url"),
+                    found.get("soundcloud_url"),
+                    rel_id,
+                )
+
+        return {**rel, **new_fields}
+
+    enriched = await asyncio.gather(*(fetch_one(r) for r in new_releases))
+
+    logger.info(
+        "extract_media_urls: fetched %d articles, found %d media URLs (skipped %d already-enriched)",
+        n_fetched, n_found_total, len(new_releases) - n_fetched,
+    )
+    return {"new_releases": enriched}
+
+
 async def enrich_metadata_node(state: IssueState) -> dict:
     """Look up MusicBrainz + Discogs metadata for each release and persist
     cover_art_url / bandcamp_url / spotify_url to the `releases` table.
@@ -973,7 +1085,8 @@ async def render_email_node(state: IssueState) -> dict:
                    r.prose, r.cover_art_url AS rec_cover_art_url,
                    rel.artist, rel.title AS release_title,
                    rel.cover_art_url AS rel_cover_art_url,
-                   rel.bandcamp_url, rel.spotify_url, rel.url
+                   rel.bandcamp_url, rel.spotify_url,
+                   rel.youtube_url, rel.soundcloud_url, rel.url
               FROM recommendations r
               JOIN releases rel ON rel.id = r.release_id
              WHERE r.issue_id = $1::uuid
@@ -995,7 +1108,15 @@ async def render_email_node(state: IssueState) -> dict:
         # — gate behind a login wall, so the button promised audio and
         # delivered a paywall. If neither Bandcamp nor Spotify is
         # available, omit the button rather than mislead.
-        listen = r["bandcamp_url"] or r["spotify_url"]
+        # Preference order is editorial: Bandcamp pays artists, Spotify
+        # is the popular default, YouTube is broadly accessible,
+        # SoundCloud catches niche/demo work.
+        listen = (
+            r["bandcamp_url"]
+            or r["spotify_url"]
+            or r["youtube_url"]
+            or r["soundcloud_url"]
+        )
         recs_payload.append({
             "position": r["position"],
             "category": r["category"],
@@ -1129,6 +1250,7 @@ def build_issue_graph():
     g.add_node("ingest_sources", ingest_sources_node)
     g.add_node("extract_artist_title", extract_artist_title_node)
     g.add_node("normalize_releases", normalize_releases_node)
+    g.add_node("extract_media_urls", extract_media_urls_node)
     g.add_node("enrich_metadata", enrich_metadata_node)
     g.add_node("embed_releases", embed_releases_node)
     g.add_node("score_for_user", score_for_user_node)
@@ -1143,7 +1265,8 @@ def build_issue_graph():
     g.set_entry_point("ingest_sources")
     g.add_edge("ingest_sources", "extract_artist_title")
     g.add_edge("extract_artist_title", "normalize_releases")
-    g.add_edge("normalize_releases", "enrich_metadata")
+    g.add_edge("normalize_releases", "extract_media_urls")
+    g.add_edge("extract_media_urls", "enrich_metadata")
     g.add_edge("enrich_metadata", "embed_releases")
     g.add_edge("embed_releases", "score_for_user")
     g.add_edge("score_for_user", "categorize_picks")

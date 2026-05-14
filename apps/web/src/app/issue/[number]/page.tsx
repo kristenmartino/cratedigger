@@ -68,6 +68,8 @@ export default async function IssuePage({ params }: PageProps) {
       relCoverArtUrl: schema.releases.coverArtUrl,
       bandcampUrl: schema.releases.bandcampUrl,
       spotifyUrl: schema.releases.spotifyUrl,
+      youtubeUrl: schema.releases.youtubeUrl,
+      soundcloudUrl: schema.releases.soundcloudUrl,
       releaseUrl: schema.releases.url,
     })
     .from(schema.recommendations)
@@ -110,7 +112,14 @@ export default async function IssuePage({ params }: PageProps) {
             // (Aquarium Drunkard articles, indie shop product pages) gate
             // behind login walls — better to omit the Listen button than
             // promise audio and deliver a paywall.
-            const listen = rec.bandcampUrl || rec.spotifyUrl;
+            // Editorial preference order: Bandcamp pays artists, Spotify
+            // is the popular default, YouTube is broadly accessible,
+            // SoundCloud catches niche/demo work.
+            const listen =
+              rec.bandcampUrl ||
+              rec.spotifyUrl ||
+              rec.youtubeUrl ||
+              rec.soundcloudUrl;
             return (
               <section
                 key={`${rec.position}-${rec.artist}-${rec.releaseTitle}`}
