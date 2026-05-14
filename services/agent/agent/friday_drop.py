@@ -107,9 +107,13 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
 
     resend.api_key = settings.resend_api_key
 
+    from agent.listen_links import build_listen_links
+
     for row in rows:
         rec_id = row["rec_id"]
         try:
+            # All-platforms strip. Same shape Sunday emails use.
+            listen_links = build_listen_links(dict(row))
             mjml_source = build_friday_drop_mjml({
                 "issue_number": row["issue_number"],
                 "artist": row["artist"],
@@ -117,16 +121,7 @@ async def deliver_friday_drops_for_user(user_id: str) -> dict[str, Any]:
                 "source_attr": row["source_attr"],
                 "prose": row["prose"],
                 "cover_art_url": row["rec_cover_art_url"] or row["rel_cover_art_url"],
-                # Direct-audio only; no source-URL fallback (some source
-                # articles gate behind login walls). See render_email_node
-                # in issue_workflow.py for the same rule on Sunday emails.
-                "listen_url": (
-                    row["bandcamp_url"]
-                    or row["spotify_url"]
-                    or row["apple_music_url"]
-                    or row["youtube_url"]
-                    or row["soundcloud_url"]
-                ),
+                "listen_links": listen_links,
             })
             # Defensive MJML dispatch — see agent/email_template.render_mjml
             # for why we don't pin to a specific function name.

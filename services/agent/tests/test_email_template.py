@@ -278,18 +278,55 @@ def test_issue_skips_cover_image_when_url_missing(sample_issue):
     assert "<mj-image" not in mjml
 
 
-def test_issue_renders_listen_button_when_url_present(sample_issue):
-    sample_issue["recommendations"][0]["listen_url"] = "https://shhe.bandcamp.com/album/thalassa"
+def test_issue_renders_listen_strip_with_single_platform(sample_issue):
+    """Records with one platform still get a strip — same data shape,
+    just one entry. The legacy single-Listen-button assertion is gone."""
+    sample_issue["recommendations"][0]["listen_links"] = [
+        {"platform": "Bandcamp", "url": "https://shhe.bandcamp.com/album/thalassa"},
+    ]
     mjml = build_issue_mjml(sample_issue)
     assert 'href="https://shhe.bandcamp.com/album/thalassa"' in mjml
-    assert "Listen ↗" in mjml
+    assert "Bandcamp ↗" in mjml
+    assert "Listen:" in mjml
 
 
-def test_issue_skips_listen_button_when_url_missing(sample_issue):
-    for r in sample_issue["recommendations"]:
-        r["listen_url"] = None
+def test_issue_renders_all_platforms_in_strip(sample_issue):
+    """Multi-platform records surface every link, in the order the
+    workflow built them. Each platform's label and URL are present."""
+    sample_issue["recommendations"][0]["listen_links"] = [
+        {"platform": "Bandcamp", "url": "https://burial.bandcamp.com/album/untrue"},
+        {"platform": "Spotify", "url": "https://open.spotify.com/album/abc"},
+        {"platform": "Apple Music", "url": "https://music.apple.com/album/xyz"},
+    ]
     mjml = build_issue_mjml(sample_issue)
-    assert "Listen ↗" not in mjml
+    assert 'href="https://burial.bandcamp.com/album/untrue"' in mjml
+    assert 'href="https://open.spotify.com/album/abc"' in mjml
+    assert 'href="https://music.apple.com/album/xyz"' in mjml
+    assert "Bandcamp ↗" in mjml
+    assert "Spotify ↗" in mjml
+    assert "Apple Music ↗" in mjml
+
+
+def test_issue_skips_listen_strip_when_no_platforms(sample_issue):
+    """Records with no listen URLs at all → no Listen: line."""
+    for r in sample_issue["recommendations"]:
+        r["listen_links"] = []
+        r.pop("listen_url", None)
+    mjml = build_issue_mjml(sample_issue)
+    assert "Listen:" not in mjml
+
+
+def test_issue_back_compat_listen_url_still_renders(sample_issue):
+    """A caller passing only the legacy single listen_url (without
+    listen_links) still produces output — defensive against any
+    downstream that hasn't migrated."""
+    for r in sample_issue["recommendations"]:
+        r["listen_links"] = []
+    sample_issue["recommendations"][0]["listen_url"] = (
+        "https://burial.bandcamp.com/album/untrue"
+    )
+    mjml = build_issue_mjml(sample_issue)
+    assert 'href="https://burial.bandcamp.com/album/untrue"' in mjml
 
 
 def test_issue_view_in_browser_anchor_uses_base_url(sample_issue):

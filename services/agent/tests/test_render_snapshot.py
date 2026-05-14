@@ -67,7 +67,10 @@ def fixture_issue() -> dict:
                 "artist": "Burial",
                 "release_title": "Untrue",
                 "cover_art_url": "https://example.com/cover-untrue.jpg",
-                "listen_url": "https://burial.bandcamp.com/album/untrue",
+                "listen_links": [
+                    {"platform": "Bandcamp", "url": "https://burial.bandcamp.com/album/untrue"},
+                    {"platform": "Spotify", "url": "https://open.spotify.com/album/burial-untrue"},
+                ],
             },
             {
                 "category": "steady",
@@ -77,7 +80,9 @@ def fixture_issue() -> dict:
                 "artist": "Setting",
                 "release_title": "S/T",
                 "cover_art_url": None,
-                "listen_url": "https://setting.bandcamp.com",
+                "listen_links": [
+                    {"platform": "Bandcamp", "url": "https://setting.bandcamp.com"},
+                ],
             },
             {
                 "category": "withheld",
@@ -87,7 +92,9 @@ def fixture_issue() -> dict:
                 "artist": "Boards of Canada",
                 "release_title": "Tape 05",
                 "cover_art_url": "https://example.com/cover-boc.jpg",
-                "listen_url": "https://boc.bandcamp.com",
+                "listen_links": [
+                    {"platform": "Bandcamp", "url": "https://boc.bandcamp.com"},
+                ],
             },
         ],
     }
@@ -153,16 +160,20 @@ def test_cover_image_omitted_when_url_null(fixture_issue):
     assert "src=\"None\"" not in html
 
 
-# ── Listen link rendered as a clickable anchor with href ──────────────────
+# ── Listen strip renders each platform as a clickable anchor ──────────────
 
 
-def test_listen_link_renders_with_href(fixture_issue):
+def test_listen_strip_renders_all_platforms_with_hrefs(fixture_issue):
+    """The lead record has Bandcamp + Spotify URLs; both should appear
+    in the strip as anchors. Email clients require href to be an
+    attribute (URL in plain text doesn't make a link)."""
     html = render_mjml(build_issue_mjml(fixture_issue))
-    assert "https://burial.bandcamp.com/album/untrue" in html
-    # MJML's mj-button compiles to an <a> tag with href — the URL has to
-    # appear inside an href attribute, not just as plain text in the body.
     assert 'href="https://burial.bandcamp.com/album/untrue"' in html
-    assert "Listen ↗" in html
+    assert 'href="https://open.spotify.com/album/burial-untrue"' in html
+    assert "Bandcamp ↗" in html
+    assert "Spotify ↗" in html
+    # The "Listen:" prefix anchors what these links are
+    assert "Listen:" in html
 
 
 # ── Withheld pick is excluded from Sunday email ───────────────────────────

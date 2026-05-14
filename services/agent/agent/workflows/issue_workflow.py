@@ -1107,28 +1107,18 @@ async def render_email_node(state: IssueState) -> dict:
 
     # Per record: prefer the cover saved on the recommendation row (set at
     # persist time from the source crawl) before falling back to whatever
-    # the releases row carries. Listen link prefers Bandcamp → Spotify →
-    # the canonical source URL (the RSS entry / shop product page).
+    # the releases row carries. Listen surfaces ALL available platforms
+    # as a strip (build_listen_links keeps editorial order: Bandcamp →
+    # Spotify → Apple → YouTube → SoundCloud, skipping unset ones).
+    # Source-URL fallback is intentionally omitted — some article pages
+    # gate behind login walls.
+    from agent.listen_links import build_listen_links, primary_listen_url
+
     recs_payload = []
     for r in rec_rows:
         cover = r["rec_cover_art_url"] or r["rel_cover_art_url"]
-        # Listen button only points at a direct-audio target. Source URLs
-        # (RSS article pages, shop product pages) were the previous
-        # fallback but some — Aquarium Drunkard's articles, for instance
-        # — gate behind a login wall, so the button promised audio and
-        # delivered a paywall. If neither Bandcamp nor Spotify is
-        # available, omit the button rather than mislead.
-        # Preference order is editorial: Bandcamp pays artists, Spotify
-        # is the popular default, Apple Music is the runner-up paid
-        # streamer, YouTube is broadly accessible, SoundCloud catches
-        # niche/demo work.
-        listen = (
-            r["bandcamp_url"]
-            or r["spotify_url"]
-            or r["apple_music_url"]
-            or r["youtube_url"]
-            or r["soundcloud_url"]
-        )
+        rec_dict = dict(r)
+        listen_links = build_listen_links(rec_dict)
         recs_payload.append({
             "position": r["position"],
             "category": r["category"],
@@ -1137,7 +1127,9 @@ async def render_email_node(state: IssueState) -> dict:
             "artist": r["artist"],
             "release_title": r["release_title"],
             "cover_art_url": cover,
-            "listen_url": listen,
+            "listen_links": listen_links,
+            # Back-compat for any consumer still looking at listen_url
+            "listen_url": primary_listen_url(rec_dict),
         })
 
     issue_payload = {
