@@ -95,7 +95,7 @@ async def main() -> int:
         seed_path, n_artists, n_tags,
     )
 
-    await init_pool(db_url)
+    await init_pool()
     try:
         pool = await get_pool()
 
