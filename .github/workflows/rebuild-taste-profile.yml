@@ -1,0 +1,87 @@
+name: rebuild taste profile
+
+# Rebuilds Kristen's taste_profile row from kristen_seed.json.
+#
+# Triggers:
+#   - workflow_dispatch  — manual fire (first-time activation, or after a
+#                          new artist/tag edit you want applied immediately)
+#   - push to main with changes to kristen_seed.json — automatic rebuild
+#     on any seed edit. No human "remember to re-seed" step.
+#
+# Required repo secrets:
+#   DATABASE_URL    — same Neon connection string Railway uses + the
+#                     migrate workflow uses (PR #25)
+#   VOYAGE_API_KEY  — for embedding the seed artists; same key Railway
+#                     uses
+#
+# Scope: ONLY rebuilds the taste_profiles row. Does NOT re-seed users,
+# sources, or issue fixtures. Safe to re-run any number of times — every
+# rebuild is an UPSERT against taste_profiles where user_id matches
+# Kristen's clerk_id-mapped UUID.
+#
+# Cost: one Voyage embedding call per seed artist (~30 artists at v1).
+# Trivial.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "services/agent/data/kristen_seed.json"
+      - "services/agent/scripts/rebuild_taste_profile.py"
+      - ".github/workflows/rebuild-taste-profile.yml"
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: services/agent
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+          cache-dependency-path: services/agent/requirements.txt
+
+      - name: Install dependencies
+        # Full agent reqs — rebuild_taste_profile.py imports
+        # agent.ingestion.seed_profile which pulls in agent.embedder
+        # (voyageai), agent.db (asyncpg + pgvector), etc.
+        run: pip install -r requirements.txt
+
+      - name: Rebuild taste profile
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+        run: |
+          set -e
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DATABASE_URL repo secret is not set"
+            exit 1
+          fi
+          if [ -z "${VOYAGE_API_KEY:-}" ]; then
+            echo "::error::VOYAGE_API_KEY repo secret is not set"
+            exit 1
+          fi
+          python scripts/rebuild_taste_profile.py
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## Rebuild taste profile"
+            echo
+            echo "- Source: \`services/agent/data/kristen_seed.json\`"
+            echo "- Target row: \`taste_profiles\` for \`clerk_id=user_kristen_seed_v1\`"
+            echo "- Side effects: one upsert + ~30 Voyage embedding calls"
+            echo
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "Status: ✅ rebuilt — next Sunday cron will score against the new centroid"
+            else
+              echo "Status: ❌ failed — check the step log above"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
