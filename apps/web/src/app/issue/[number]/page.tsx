@@ -68,6 +68,7 @@ export default async function IssuePage({ params }: PageProps) {
       relCoverArtUrl: schema.releases.coverArtUrl,
       bandcampUrl: schema.releases.bandcampUrl,
       spotifyUrl: schema.releases.spotifyUrl,
+      appleMusicUrl: schema.releases.appleMusicUrl,
       youtubeUrl: schema.releases.youtubeUrl,
       soundcloudUrl: schema.releases.soundcloudUrl,
       releaseUrl: schema.releases.url,
@@ -113,11 +114,13 @@ export default async function IssuePage({ params }: PageProps) {
             // behind login walls — better to omit the Listen button than
             // promise audio and deliver a paywall.
             // Editorial preference order: Bandcamp pays artists, Spotify
-            // is the popular default, YouTube is broadly accessible,
-            // SoundCloud catches niche/demo work.
+            // is the popular default, Apple Music is the runner-up paid
+            // streamer, YouTube is broadly accessible, SoundCloud catches
+            // niche/demo work.
             const listen =
               rec.bandcampUrl ||
               rec.spotifyUrl ||
+              rec.appleMusicUrl ||
               rec.youtubeUrl ||
               rec.soundcloudUrl;
             return (

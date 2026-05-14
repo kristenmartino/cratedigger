@@ -18,6 +18,7 @@ import asyncio
 
 from agent.sources.metadata import (
     _artists_match,
+    _itunes_artwork_hires,
     _mb_artist_credit_name,
     _mb_cover_url,
     _normalize_artist,
@@ -251,6 +252,7 @@ def test_lookup_release_empty_inputs_short_circuit():
         "cover_art_url": None,
         "bandcamp_url": None,
         "spotify_url": None,
+        "apple_music_url": None,
         "youtube_url": None,
         "mbid": None,
     }
@@ -350,3 +352,37 @@ def test_youtube_candidate_empty_when_snippet_blank():
     assert _youtube_candidate_artist({}) == ""
     assert _youtube_candidate_artist({"channelTitle": "", "title": ""}) == ""
     assert _youtube_candidate_artist({"channelTitle": None, "title": None}) == ""
+
+
+# ── _itunes_artwork_hires ───────────────────────────────────────────────
+
+
+def test_itunes_artwork_upgrades_100_to_600():
+    """The CDN serves the same image at any size token. Standard
+    iTunes Search responses come back at 100x100; bumping the path
+    to 600x600 gets us a crisp cover with no extra request."""
+    src = "https://is1-ssl.mzstatic.com/image/thumb/Music/abc123/cover.jpg/100x100bb.jpg"
+    out = _itunes_artwork_hires(src)
+    assert out == "https://is1-ssl.mzstatic.com/image/thumb/Music/abc123/cover.jpg/600x600bb.jpg"
+
+
+def test_itunes_artwork_handles_non_bb_variant():
+    """Some older response shapes use plain `100x100.jpg` without the
+    `bb` quality token. The substitution still works."""
+    src = "https://example.com/cover/100x100.jpg"
+    out = _itunes_artwork_hires(src)
+    assert out == "https://example.com/cover/600x600.jpg"
+
+
+def test_itunes_artwork_handles_png():
+    """Apple sometimes returns PNG covers for older releases."""
+    src = "https://example.com/cover/100x100bb.png"
+    out = _itunes_artwork_hires(src)
+    assert out == "https://example.com/cover/600x600bb.png"
+
+
+def test_itunes_artwork_passthrough_when_no_size_token():
+    """If the URL doesn't end in a /<n>x<n>.(jpg|png) the regex
+    misses and we return the input unchanged — never raise."""
+    src = "https://example.com/some/other/url"
+    assert _itunes_artwork_hires(src) == src
