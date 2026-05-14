@@ -9,18 +9,22 @@
  */
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@cratedigger/db";
 import { Wordmark } from "@/components/Wordmark";
 import { AuthButtons } from "@/components/AuthButtons";
+import { SpotifyConnectButton } from "@/components/SpotifyConnectButton";
 
 const clerkPk = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const clerkEnabled = !!clerkPk && clerkPk.startsWith("pk_");
 
 export default async function HomePage() {
+  let signedIn = false;
+  let spotifyConnected = false;
   if (clerkEnabled) {
     const { userId } = await auth();
     if (userId) {
+      signedIn = true;
       // Look up our DB user row + whether their taste profile exists.
       // If signed in but no profile → bounce to /onboarding.
       const rows = await db
@@ -40,6 +44,20 @@ export default async function HomePage() {
       if (!row || !row.hasProfile) {
         redirect("/onboarding");
       }
+
+      // Surface the Spotify-connect prompt for users who completed
+      // onboarding but haven't linked Spotify yet.
+      const spotifyRows = await db
+        .select({ revoked: schema.userSpotifyConnections.revoked })
+        .from(schema.userSpotifyConnections)
+        .where(
+          and(
+            eq(schema.userSpotifyConnections.userId, row.userId),
+            eq(schema.userSpotifyConnections.revoked, false),
+          ),
+        )
+        .limit(1);
+      spotifyConnected = spotifyRows.length > 0;
     }
   }
 
@@ -63,6 +81,12 @@ export default async function HomePage() {
         The first issue is being prepared. Sign in to subscribe and be among
         the first to receive Crate Digger when it ships.
       </p>
+
+      {signedIn && (
+        <div className="mt-10">
+          <SpotifyConnectButton connected={spotifyConnected} />
+        </div>
+      )}
     </div>
   );
 }

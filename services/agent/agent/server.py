@@ -41,6 +41,7 @@ from agent.sources.spotify_playlist import (
     fetch_playlist_artists,
     parse_playlist_url,
 )
+from agent.spotify_sync import sync_for_all_connected_users, sync_playlist_for_user
 from agent.workflows.issue_workflow import IssueState, issue_pipeline
 
 logger = logging.getLogger("cratedigger-agent.server")
@@ -144,6 +145,7 @@ async def root():
             "friday_drop": "POST /v1/friday-drop",
             "build_taste_profile": "POST /v1/build-taste-profile",
             "parse_playlist": "POST /v1/parse-playlist",
+            "sync_spotify_playlist": "POST /v1/sync-spotify-playlist",
         },
     }
 
@@ -362,4 +364,49 @@ async def parse_playlist(
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={"playlist_id": playlist_id, "artists": artists},
+    )
+
+
+@app.post(
+    "/v1/sync-spotify-playlist",
+    summary="Write this week's picks into a user's Crate Digger Spotify playlist",
+)
+async def sync_spotify_playlist(
+    request: Request,
+    x_pipeline_key: str | None = Header(default=None, alias="X-Pipeline-Key"),
+):
+    """Tier 3: per-user playlist write-back.
+
+    Body: `{user_id: str}` syncs one user; `{all: true}` enumerates every
+    connected user (used by the Sunday cron post-issue hook).
+
+    Per-user errors don't crash — see sync_playlist_for_user / sync_for_all
+    for the failure-mode summary contract. Always returns 200 with a
+    structured outcome.
+    """
+    _verify_pipeline_key(x_pipeline_key)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if body.get("all"):
+        results = await sync_for_all_connected_users()
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"results": results, "total": len(results)},
+        )
+
+    user_id = body.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id required (or pass {all: true})",
+        )
+
+    result = await sync_playlist_for_user(user_id)
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"user_id": user_id, **result},
     )

@@ -186,6 +186,37 @@ ALTER TABLE releases
 ALTER TABLE releases
     ADD COLUMN IF NOT EXISTS apple_music_url TEXT;
 
+-- ── user_spotify_connections ──────────────────────────────────────────────
+-- Tier 3 onboarding: per-user Spotify OAuth for the weekly playlist
+-- write-back. Holds the long-lived refresh_token (revocable from the
+-- user's Spotify account settings) + the rolling Crate Digger playlist
+-- id. The access_token is cached opportunistically for ~1 hour; the
+-- agent refreshes it on demand using the refresh_token.
+--
+-- Refresh tokens are sensitive. We store them plaintext for the
+-- single-tenant phase since Neon's DATABASE_URL is the same trust
+-- boundary as the rest of the user data. Encrypt-at-rest is a
+-- documented follow-up before any wider rollout.
+
+CREATE TABLE IF NOT EXISTS user_spotify_connections (
+    id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id                   UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    spotify_user_id           TEXT NOT NULL,
+    refresh_token             TEXT NOT NULL,
+    access_token              TEXT,
+    access_token_expires_at   TIMESTAMPTZ,
+    scopes                    TEXT[] NOT NULL DEFAULT '{}',
+    playlist_id               TEXT,
+    connected_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_sync_at              TIMESTAMPTZ,
+    last_error                TEXT,
+    revoked                   BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_spotify_active
+    ON user_spotify_connections(user_id)
+    WHERE revoked = FALSE;
+
 -- ── feedback ──────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS feedback (
