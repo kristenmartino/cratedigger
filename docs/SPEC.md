@@ -260,12 +260,14 @@ Initial weights: α=0.40, β=0.30, γ=0.20, δ=0.10, ε=0.15. Tune from feedback
 ### 4.2 Categorization
 
 After scoring all candidates:
-- **Lead** = highest-scoring release with score > 0.85
-- **Steady** = next 2 records with score in [0.65, 0.85]
-- **Stretch** = highest-scoring record with score in [0.50, 0.65] AND not from a recently-recommended artist
+- **Lead** = highest-scoring release with score > 0.30
+- **Steady** = next 2 records with score in [0.22, 0.30]
+- **Stretch** = highest-scoring record with score in [0.15, 0.22] AND not from a recently-recommended artist
 - **Withheld** = next-highest-scoring release; held for Friday email
 
-If the pool doesn't yield a stretch (no records in the 0.50-0.65 band that survive the artist-fatigue filter), promote the next Steady to Stretch and surface a different framing in the prose.
+If the pool doesn't yield a stretch (no records in the [0.15, 0.22) band that survive the artist-fatigue filter), promote the next Steady to Stretch and surface a different framing in the prose.
+
+> **Calibration note (2026-05-12):** these thresholds were originally specified as 0.85 / 0.65 / 0.50, scaled to a 0–1 score range assuming each component (cosine, tag_overlap, source_authority, recency) could contribute near 1.0. In practice the scoring formula in `agent/scoring.py` tops out around 0.43–0.50 for well-matched releases — `tag_overlap` is normalized by `sum(boosted_weights)` which keeps it under ~0.3, and `cosine` against the seed centroid rarely exceeds 0.6. The thresholds above are the band-aid calibration. A proper fix (per-run z-score normalization, or rebalancing α/β/γ/δ so the formula produces the full 0–1 range) is a separate workstream — when that lands, bump these back up. See `tests/test_categorization.py::test_thresholds_are_calibrated_to_observed_scoring`.
 
 ### 4.3 Prose generation
 

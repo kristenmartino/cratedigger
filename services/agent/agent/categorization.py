@@ -38,9 +38,38 @@ class CategorizedPick:
     source_attr: str  # the highest-weighted source from sources_seen
 
 
-SCORE_LEAD_FLOOR = 0.85
-SCORE_STEADY_FLOOR = 0.65
-SCORE_STRETCH_FLOOR = 0.50
+# Score thresholds. The SPEC originally specified 0.85 / 0.65 / 0.50 —
+# those numbers were aspirational. The actual scoring formula in
+# agent/scoring.py tops out around 0.43-0.50 for a well-matched release
+# (α=0.40·cosine + β=0.30·tag_overlap + γ=0.20·source_authority +
+# δ=0.10·recency, and tag_overlap is normalized by sum(boosted_weights)
+# which keeps it under 0.3 in practice). Result: with the original
+# floors, 94 of 96 candidates dropped below Stretch and the system
+# always promoted via the "no Stretch in pool" fallback.
+#
+# Calibrated thresholds, scaled to what scoring actually produces:
+#
+#   Lead    ≥ 0.30 — the few records that genuinely cluster with
+#                    profile centroid AND share boosted tags AND come
+#                    from a high-authority source. Equivalent in
+#                    "rarity" to the original 0.85 against ideal-state
+#                    scoring math.
+#   Steady  ≥ 0.22 — solid match on two of the four signals
+#   Stretch ≥ 0.15 — meaningful overlap on at least one signal
+#
+# These are the band-aid fix. A proper rescaling (per-run z-score
+# normalization, or weight rebalancing so the formula produces the
+# 0–1 range the SPEC's thresholds expected) is a separate workstream.
+# Until then, these numbers make the system ship 5 picks honestly
+# instead of always promoting via the fallback.
+#
+# The quality_dashboard.sql "scoring vs thresholds" section will show
+# how often each band is cleared; if all picks consistently land in
+# one band, that's the signal to revisit weights vs thresholds.
+
+SCORE_LEAD_FLOOR = 0.30
+SCORE_STEADY_FLOOR = 0.22
+SCORE_STRETCH_FLOOR = 0.15
 
 
 def categorize(
