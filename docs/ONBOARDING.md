@@ -128,11 +128,59 @@ invitees should always be encouraged toward the Tier 1 form.
 - Listening-history JSON upload (Last.fm / Spotify "Your Data" export)
 - Live MusicBrainz autocomplete on the artist field
 
-### Tier 3 — Spotify OAuth
+### Tier 3 — Spotify OAuth playlist write-back (LIVE)
 
-- Per-user Spotify OAuth — both for *reading* listening history as
-  taste-seed input AND *writing* weekly picks back to a rolling
-  "Crate Digger" playlist that auto-updates each Sunday
+After onboarding, the user can click "Connect Spotify" (on
+`/onboarding/done` or the home page) to grant our app
+`playlist-modify-public` + `user-read-email`. We persist the refresh
+token in `user_spotify_connections`, and the issue pipeline's
+`sync_spotify_node` (final DAG node) writes that week's 4 non-withheld
+picks into a rolling "Crate Digger" playlist on the user's account.
+
+Flow:
+1. User clicks Connect → `/api/spotify/connect` redirects to Spotify
+   authorize with a CSRF state cookie
+2. Spotify redirects to `/api/spotify/callback?code=...&state=...`
+3. Callback verifies state, exchanges code for tokens, fetches the
+   user's Spotify id, upserts `user_spotify_connections`
+4. Every Sunday, after `send_email_node` finishes, `sync_spotify_node`:
+   - Refreshes the access token if needed (revokes the connection on
+     `invalid_grant`)
+   - Pulls latest issue's 4 non-withheld picks
+   - Resolves each pick's album → first track URI (skips unresolvable)
+   - Creates the rolling playlist if it doesn't exist; replaces tracks
+     if it does. Re-creates if the user deleted it.
+5. `last_sync_at`, `playlist_id`, and `last_error` are visible on the
+   row for ops debugging
+
+Required env (Vercel):
+- `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` — same app as the
+  agent's catalog-search creds; one Spotify app registration handles
+  both flows
+- `SPOTIFY_REDIRECT_URI` — must be added to the Spotify dashboard's
+  "Redirect URIs" list. Prod:
+  `https://cratedigger.kristenmartino.ai/api/spotify/callback`
+
+Manual sync (skip waiting for Sunday):
+```bash
+curl -X POST $AGENT_URL/v1/sync-spotify-playlist \
+  -H "X-Pipeline-Key: $PIPELINE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"<uuid>"}'
+# Or sync everyone with an active connection:
+# -d '{"all":true}'
+```
+
+Failure modes:
+- User revoked our access on Spotify → next sync gets `invalid_grant`
+  on refresh, we mark `revoked=TRUE` and stop syncing silently
+- All picks have no Spotify URL → sync skips with status "no
+  resolvable tracks"; the issue still ships normally
+- Spotify is down → recorded as `last_error`; next Sunday tries again
+
+Refresh tokens are stored plaintext in Postgres. Trust boundary is the
+same as `DATABASE_URL`. Encrypt-at-rest is a tracked follow-up before
+wider rollout.
 
 ## What this doesn't handle yet
 

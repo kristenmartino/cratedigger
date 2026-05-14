@@ -1254,6 +1254,48 @@ async def send_email_node(state: IssueState) -> dict:
     return {}
 
 
+async def sync_spotify_node(state: IssueState) -> dict:
+    """Tier 3: write this week's picks to the user's Crate Digger
+    Spotify playlist (rolling — replaces tracks each week).
+
+    No-ops cleanly when the user hasn't connected Spotify or their
+    connection is revoked. Failures are recorded in
+    user_spotify_connections.last_error and logged here, but don't
+    affect the issue (which was already delivered by send_email_node)
+    or the pipeline's terminal state.
+    """
+    user_id = state.get("user_id")
+    if not user_id:
+        return {}
+    try:
+        from agent.spotify_sync import sync_playlist_for_user
+        result = await sync_playlist_for_user(user_id)
+        status = result.get("status")
+        if status == "synced":
+            logger.info(
+                "spotify_sync: user=%s playlist=%s tracks=%d",
+                user_id, result.get("playlist_id"), result.get("tracks_written", 0),
+            )
+        elif status == "skipped":
+            logger.info(
+                "spotify_sync: user=%s skipped (%s)",
+                user_id, result.get("message"),
+            )
+        elif status == "revoked":
+            logger.warning(
+                "spotify_sync: user=%s connection revoked: %s",
+                user_id, result.get("message"),
+            )
+        else:
+            logger.warning(
+                "spotify_sync: user=%s status=%s message=%s",
+                user_id, status, result.get("message"),
+            )
+    except Exception as e:
+        logger.error("spotify_sync raised for user %s: %s", user_id, e)
+    return {}
+
+
 # ── Build the graph ───────────────────────────────────────────────────────
 
 def build_issue_graph():
@@ -1273,6 +1315,7 @@ def build_issue_graph():
     g.add_node("persist_issue", persist_issue_node)
     g.add_node("render_email", render_email_node)
     g.add_node("send_email", send_email_node)
+    g.add_node("sync_spotify", sync_spotify_node)
 
     g.set_entry_point("ingest_sources")
     g.add_edge("ingest_sources", "extract_artist_title")
@@ -1288,7 +1331,8 @@ def build_issue_graph():
     g.add_edge("generate_editor_note", "persist_issue")
     g.add_edge("persist_issue", "render_email")
     g.add_edge("render_email", "send_email")
-    g.add_edge("send_email", END)
+    g.add_edge("send_email", "sync_spotify")
+    g.add_edge("sync_spotify", END)
 
     return g.compile()
 

@@ -352,6 +352,42 @@ export const apiBatches = pgTable(
 );
 
 // ──────────────────────────────────────────────────────────────────────
+// user_spotify_connections
+//   Tier 3 onboarding. Holds the per-user OAuth state needed to write
+//   weekly picks into a rolling "Crate Digger" playlist on the user's
+//   Spotify account. One row per user (UNIQUE user_id); revoked rows
+//   stay around so we don't repeatedly re-prompt after revocation.
+// ──────────────────────────────────────────────────────────────────────
+
+export const userSpotifyConnections = pgTable(
+  "user_spotify_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" })
+      .unique(),
+    spotifyUserId: text("spotify_user_id").notNull(),
+    refreshToken: text("refresh_token").notNull(),
+    accessToken: text("access_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", {
+      withTimezone: true,
+    }),
+    scopes: text("scopes").array().notNull().default(sql`'{}'::text[]`),
+    playlistId: text("playlist_id"),
+    connectedAt: timestamp("connected_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    revoked: boolean("revoked").notNull().default(false),
+  },
+  (t) => ({
+    idxActive: index("idx_user_spotify_active").on(t.userId),
+  }),
+);
+
+// ──────────────────────────────────────────────────────────────────────
 // Type exports
 // ──────────────────────────────────────────────────────────────────────
 
