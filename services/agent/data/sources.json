@@ -178,5 +178,59 @@
     "default_weight": 0.75,
     "genre_affinity": ["ambient", "post-classical", "experimental", "drone"],
     "active": false
+  },
+  {
+    "name": "All About Jazz",
+    "slug": "all-about-jazz",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.allaboutjazz.com/feed/",
+    "default_weight": 0.7,
+    "genre_affinity": ["jazz", "improvisation", "post-bop", "avant-garde"],
+    "active": true
+  },
+  {
+    "name": "NPR Music",
+    "slug": "npr-music",
+    "ingest_method": "rss",
+    "ingest_url": "https://feeds.npr.org/1039/rss.xml",
+    "default_weight": 0.7,
+    "genre_affinity": ["classical", "jazz", "world", "indie", "folk"],
+    "active": true
+  },
+  {
+    "name": "I Care If You Listen",
+    "slug": "i-care-if-you-listen",
+    "ingest_method": "rss",
+    "ingest_url": "https://icareifyoulisten.com/feed/",
+    "default_weight": 0.75,
+    "genre_affinity": ["contemporary-classical", "experimental", "avant-garde", "modern-classical"],
+    "active": true
+  },
+  {
+    "name": "Pigeons & Planes",
+    "slug": "pigeons-and-planes",
+    "ingest_method": "rss",
+    "ingest_url": "https://pigeonsandplanes.com/feed/",
+    "default_weight": 0.65,
+    "genre_affinity": ["hip-hop", "rap", "rnb"],
+    "active": true
+  },
+  {
+    "name": "No Depression",
+    "slug": "no-depression",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.nodepression.com/feed/",
+    "default_weight": 0.7,
+    "genre_affinity": ["americana", "folk", "country", "bluegrass"],
+    "active": true
+  },
+  {
+    "name": "PopMatters",
+    "slug": "popmatters",
+    "ingest_method": "rss",
+    "ingest_url": "https://www.popmatters.com/feed",
+    "default_weight": 0.55,
+    "genre_affinity": ["indie", "rock", "alternative", "pop"],
+    "active": true
   }
 ]
