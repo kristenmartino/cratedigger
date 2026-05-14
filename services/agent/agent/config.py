@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     # the metadata enrichment step uses MusicBrainz only.
     discogs_token: str = ""
 
+    # Optional. Spotify Client Credentials — server-to-server, NOT the
+    # user-OAuth flow. Used to search Spotify's catalog for release URLs
+    # since MB's URL-relationships table is sparse. Free to generate at
+    # https://developer.spotify.com/dashboard. Without these, the metadata
+    # enrichment step only gets Spotify URLs from MB rels (most releases
+    # won't get one). The separate user-OAuth flow for writing playlists
+    # is a future workstream — these credentials don't enable that.
+    spotify_client_id: str = ""
+    spotify_client_secret: str = ""
+
     # Public web app base URL. Used by the email template for the
     # "Read in browser" anchor pointing at /issue/<n>. Defaults to the
     # production domain; override locally for preview deploys.

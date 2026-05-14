@@ -35,6 +35,7 @@ matches the input artist. Mismatch → reject. No-cover beats wrong-cover.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import re
 import time
@@ -49,6 +50,8 @@ logger = logging.getLogger("cratedigger-agent.metadata")
 MB_BASE = "https://musicbrainz.org/ws/2"
 CAA_BASE = "https://coverartarchive.org"
 DISCOGS_BASE = "https://api.discogs.com"
+SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
+SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 
 # Per MusicBrainz policy. We're polite-bot citizens; the rest of the
 # pipeline is also serialized via this lock to keep the total RPS in budget.
@@ -59,6 +62,19 @@ _MB_MIN_INTERVAL = 1.05  # tiny headroom over the 1 sec policy floor
 _DISCOGS_LOCK = asyncio.Lock()
 _DISCOGS_LAST_AT = 0.0
 _DISCOGS_MIN_INTERVAL = 1.05
+
+# Spotify Web API: documented limits aren't published as a fixed number, but
+# in practice 180 req/min is the soft ceiling for Client Credentials. We
+# pace at ~10 req/sec to be safe and still finish a full crawl in seconds.
+_SPOTIFY_LOCK = asyncio.Lock()
+_SPOTIFY_LAST_AT = 0.0
+_SPOTIFY_MIN_INTERVAL = 0.1
+
+# Spotify access token cache (Client Credentials flow). One token per
+# pipeline run; valid for ~1 hour. Module-level so concurrent lookups
+# share the same token instead of each fetching their own.
+_SPOTIFY_TOKEN: dict[str, Any] | None = None
+_SPOTIFY_TOKEN_LOCK = asyncio.Lock()
 
 
 # ── Artist-match verification ───────────────────────────────────────────
@@ -324,6 +340,139 @@ async def _discogs_cover(
     return None
 
 
+# ── Spotify (Client Credentials — public catalog search only) ──────────
+#
+# MusicBrainz's URL-relationships table is volunteer-contributed and only
+# covers a small fraction of records' Spotify URLs. Most releases score
+# zero Spotify links from MB even when they're on Spotify.
+#
+# This adds a direct Spotify catalog search as a fallback. Uses the
+# Client Credentials grant — server-to-server, no user OAuth required.
+# That separate Spotify OAuth flow (for writing user playlists) is a
+# different workstream; the catalog search is public and free.
+#
+# Same artist-match verification as MB: Spotify search returns top
+# results sorted by relevance, but a generic title can pull in the wrong
+# artist. Reject results where the artists don't match.
+
+
+async def _spotify_token(http: AsyncSession) -> str | None:
+    """Return a cached Client Credentials access token, fetching if needed.
+
+    Tokens are 1-hour TTL; we cache module-level and refresh ~60s before
+    expiry. Concurrent callers share the same token via the lock.
+    """
+    global _SPOTIFY_TOKEN
+    if not (settings.spotify_client_id and settings.spotify_client_secret):
+        return None
+
+    async with _SPOTIFY_TOKEN_LOCK:
+        now = time.monotonic()
+        if _SPOTIFY_TOKEN and _SPOTIFY_TOKEN.get("expires_at", 0) > now:
+            return _SPOTIFY_TOKEN["access_token"]
+
+        # Client Credentials grant: HTTP Basic header with
+        # base64(client_id:client_secret) + grant_type=client_credentials.
+        creds = base64.b64encode(
+            f"{settings.spotify_client_id}:{settings.spotify_client_secret}".encode()
+        ).decode()
+        try:
+            resp = await http.post(
+                SPOTIFY_TOKEN_URL,
+                data={"grant_type": "client_credentials"},
+                headers={
+                    "Authorization": f"Basic {creds}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                allow_redirects=True,
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Spotify token request returned %d: %s",
+                    resp.status_code, resp.text[:200],
+                )
+                return None
+            data = resp.json()
+        except Exception as e:
+            logger.warning("Spotify token fetch raised: %s", e)
+            return None
+
+        token = data.get("access_token")
+        expires_in = int(data.get("expires_in") or 3600)
+        if not token:
+            return None
+        _SPOTIFY_TOKEN = {
+            "access_token": token,
+            "expires_at": now + expires_in - 60,  # 60s buffer
+        }
+        return token
+
+
+async def _spotify_search_album(
+    http: AsyncSession, artist: str, title: str
+) -> str | None:
+    """Search Spotify's catalog for an album matching (artist, title).
+
+    Returns the album's spotify.com URL if a verified match is found,
+    None otherwise. Verification is the same `_artists_match` rule the MB
+    path uses — Spotify's structured `artist:"X" album:"Y"` query is more
+    precise than free-text search but can still surface wrong results
+    when the artist is obscure or the title is generic.
+    """
+    token = await _spotify_token(http)
+    if not token:
+        return None
+
+    await _throttle(_SPOTIFY_LOCK, "_SPOTIFY_LAST_AT", _SPOTIFY_MIN_INTERVAL)
+    try:
+        resp = await http.get(
+            f"{SPOTIFY_API_BASE}/search",
+            params={
+                "q": f'artist:"{artist}" album:"{title}"',
+                "type": "album",
+                "limit": "5",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+            allow_redirects=True,
+        )
+        if resp.status_code != 200:
+            logger.info(
+                "Spotify search %r — %r returned %d",
+                artist, title, resp.status_code,
+            )
+            return None
+        data = resp.json()
+    except Exception as e:
+        logger.warning("Spotify search %r — %r raised: %s", artist, title, e)
+        return None
+
+    items = (data.get("albums") or {}).get("items") or []
+    for album in items:
+        candidate_artist = _spotify_album_artist_name(album)
+        if not _artists_match(artist, candidate_artist):
+            logger.info(
+                "Spotify candidate rejected (artist mismatch): "
+                "input %r vs matched %r (album: %r)",
+                artist, candidate_artist, album.get("name"),
+            )
+            continue
+        url = (album.get("external_urls") or {}).get("spotify")
+        if url and isinstance(url, str) and url.startswith("http"):
+            return url
+    return None
+
+
+def _spotify_album_artist_name(album: dict[str, Any]) -> str:
+    """Read the display artist-name from a Spotify album response.
+
+    Multi-artist albums (collabs, splits) come back as `artists: [
+    {name, ...}, {name, ...} ]`. Concatenate with spaces so the
+    artist-match's whole-word substring rule has a chance to fire.
+    """
+    artists = album.get("artists") or []
+    return " ".join(a.get("name") or "" for a in artists).strip()
+
+
 # ── Public API ──────────────────────────────────────────────────────────
 
 
@@ -365,6 +514,14 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
                     bc, sp = _parse_mb_urls(rg)
                     result["bandcamp_url"] = bc
                     result["spotify_url"] = sp
+
+            # Spotify catalog search — fills in spotify_url when MB's
+            # URL-relationships table doesn't have one (which is the
+            # common case; MB rels are volunteer-contributed and sparse).
+            # Skipped if Spotify credentials are unset OR if MB already
+            # produced a verified Spotify URL.
+            if not result["spotify_url"]:
+                result["spotify_url"] = await _spotify_search_album(http, artist, title)
 
             # Discogs fallback — only when MB didn't find a cover, to save
             # quota. The user gave us a Discogs token only as a fill-in.

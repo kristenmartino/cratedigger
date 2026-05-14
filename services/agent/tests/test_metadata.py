@@ -22,6 +22,7 @@ from agent.sources.metadata import (
     _mb_cover_url,
     _normalize_artist,
     _parse_mb_urls,
+    _spotify_album_artist_name,
     lookup_release,
 )
 
@@ -255,3 +256,47 @@ def test_lookup_release_empty_inputs_short_circuit():
     out = asyncio.run(lookup_release("Some Artist", ""))
     assert out["mbid"] is None
     assert out["cover_art_url"] is None
+
+
+# ── _spotify_album_artist_name ──────────────────────────────────────────
+
+
+def test_spotify_artist_name_single():
+    """Standard single-artist album response shape."""
+    album = {
+        "artists": [{"name": "Burial", "id": "abc"}],
+        "name": "Untrue",
+    }
+    assert _spotify_album_artist_name(album) == "Burial"
+
+
+def test_spotify_artist_name_collab():
+    """Multi-artist albums (splits, collabs). Concatenated so the
+    artist-match's whole-word substring rule fires correctly — input
+    'Burial' against the concatenated 'Burial Four Tet' matches via
+    substring, just like the MB collab case."""
+    album = {
+        "artists": [
+            {"name": "Burial"},
+            {"name": "Four Tet"},
+        ],
+        "name": "Moth / Wolf Cub",
+    }
+    assert _spotify_album_artist_name(album) == "Burial Four Tet"
+
+
+def test_spotify_artist_name_empty():
+    """Missing or empty artists block — no exception, returns empty string."""
+    assert _spotify_album_artist_name({}) == ""
+    assert _spotify_album_artist_name({"artists": []}) == ""
+
+
+def test_spotify_artist_name_tolerates_missing_name_field():
+    """A malformed artist entry without `name` shouldn't raise."""
+    album = {
+        "artists": [
+            {"id": "abc"},  # no name
+            {"name": "Burial"},
+        ],
+    }
+    assert _spotify_album_artist_name(album) == "Burial"

@@ -106,8 +106,11 @@ export default async function IssuePage({ params }: PageProps) {
         <div className="mt-20 space-y-16">
           {recs.map((rec) => {
             const cover = rec.recCoverArtUrl || rec.relCoverArtUrl;
-            const listen =
-              rec.bandcampUrl || rec.spotifyUrl || rec.releaseUrl;
+            // Direct-audio only; no source-URL fallback. Some source pages
+            // (Aquarium Drunkard articles, indie shop product pages) gate
+            // behind login walls — better to omit the Listen button than
+            // promise audio and deliver a paywall.
+            const listen = rec.bandcampUrl || rec.spotifyUrl;
             return (
               <section
                 key={`${rec.position}-${rec.artist}-${rec.releaseTitle}`}

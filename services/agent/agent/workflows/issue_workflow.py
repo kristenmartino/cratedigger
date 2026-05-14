@@ -989,7 +989,13 @@ async def render_email_node(state: IssueState) -> dict:
     recs_payload = []
     for r in rec_rows:
         cover = r["rec_cover_art_url"] or r["rel_cover_art_url"]
-        listen = r["bandcamp_url"] or r["spotify_url"] or r["url"]
+        # Listen button only points at a direct-audio target. Source URLs
+        # (RSS article pages, shop product pages) were the previous
+        # fallback but some — Aquarium Drunkard's articles, for instance
+        # — gate behind a login wall, so the button promised audio and
+        # delivered a paywall. If neither Bandcamp nor Spotify is
+        # available, omit the button rather than mislead.
+        listen = r["bandcamp_url"] or r["spotify_url"]
         recs_payload.append({
             "position": r["position"],
             "category": r["category"],
