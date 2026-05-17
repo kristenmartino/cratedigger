@@ -172,50 +172,57 @@ def test_friday_drop_includes_issue_number_and_record(sample_friday_drop):
 # ── render_mjml dispatch ────────────────────────────────────────────────
 
 
-def _stub_mjml(**exports):
-    """Build a fake mjml module with the given exports."""
+def _stub_mjml(monkeypatch, **exports):
+    """Build a fake mjml module with the given exports.
+
+    Uses monkeypatch so the real `mjml` module (or its absence) is
+    restored at test teardown. Without this, the stub persists in
+    sys.modules and poisons later test files — most notably
+    test_render_snapshot.py, which uses the REAL mjml-python in CI
+    and would otherwise inherit our fake exports and fail.
+    """
     import sys
     import types
     mod = types.ModuleType("mjml")
     for name, value in exports.items():
         setattr(mod, name, value)
-    sys.modules["mjml"] = mod
+    monkeypatch.setitem(sys.modules, "mjml", mod)
     return mod
 
 
-def test_render_mjml_dispatches_to_mjml_to_html():
+def test_render_mjml_dispatches_to_mjml_to_html(monkeypatch):
     """The original API name we guessed — kept for newer mjml-python versions."""
     from agent.email_template import render_mjml
 
-    _stub_mjml(mjml_to_html=lambda s: type("R", (), {"html": f"<html>{s}</html>"})())
+    _stub_mjml(monkeypatch, mjml_to_html=lambda s: type("R", (), {"html": f"<html>{s}</html>"})())
     out = render_mjml("<mjml>x</mjml>")
     assert out == "<html><mjml>x</mjml></html>"
 
 
-def test_render_mjml_falls_back_to_mjml2html():
+def test_render_mjml_falls_back_to_mjml2html(monkeypatch):
     """v1.4.0 production error: the only working function may be mjml2html."""
     from agent.email_template import render_mjml
 
-    _stub_mjml(mjml2html=lambda s: {"html": f"<from-mjml2html>{s}</from-mjml2html>"})
+    _stub_mjml(monkeypatch, mjml2html=lambda s: {"html": f"<from-mjml2html>{s}</from-mjml2html>"})
     out = render_mjml("<mjml>y</mjml>")
     assert out == "<from-mjml2html><mjml>y</mjml></from-mjml2html>"
 
 
-def test_render_mjml_accepts_raw_string_result():
+def test_render_mjml_accepts_raw_string_result(monkeypatch):
     """Some MJML libs return the HTML string directly, not wrapped."""
     from agent.email_template import render_mjml
 
-    _stub_mjml(render=lambda s: f"<raw>{s}</raw>")
+    _stub_mjml(monkeypatch, render=lambda s: f"<raw>{s}</raw>")
     out = render_mjml("<mjml>z</mjml>")
     assert out == "<raw><mjml>z</mjml></raw>"
 
 
-def test_render_mjml_diagnostic_on_total_miss():
+def test_render_mjml_diagnostic_on_total_miss(monkeypatch):
     """When no known API name resolves, the error must include the actual
     `dir(mjml)` listing so the next fix has a definitive answer."""
     from agent.email_template import render_mjml
 
-    _stub_mjml(some_other_function=lambda s: s, another_one=42)
+    _stub_mjml(monkeypatch, some_other_function=lambda s: s, another_one=42)
 
     try:
         render_mjml("<mjml>x</mjml>")
