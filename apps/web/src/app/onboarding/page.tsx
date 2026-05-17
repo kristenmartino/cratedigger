@@ -13,6 +13,7 @@
  * background. The user gets routed to /onboarding/done immediately.
  */
 import { redirect } from "next/navigation";
+import type { Route } from "next";
 import { auth } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@cratedigger/db";
@@ -29,7 +30,12 @@ export default async function OnboardingPage() {
   }
 
   const { userId } = await auth();
-  if (!userId) redirect("/sign-in?redirect_url=/onboarding");
+  // After sign-in the user lands on `/` and our home-page redirect bounces
+  // them back to `/onboarding` (no taste profile yet), so omit the
+  // `?redirect_url=` query that Next 15's typedRoutes won't accept on a
+  // Route-string argument. The `as Route` cast handles the catch-all
+  // route shape (`/sign-in/[[...sign-in]]`) being typed strictly.
+  if (!userId) redirect("/sign-in" as Route);
 
   const rows = await db
     .select({ hasProfile: schema.tasteProfiles.id })
