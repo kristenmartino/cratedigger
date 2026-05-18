@@ -11,12 +11,24 @@
  * blocks, matched-signals microsections, pull-quote, sticky track-nav,
  * now-digging widget, withheld seal) is a separate sprint.
  *
+ * Per-user scoped: issue_number is unique PER user, so the same issue
+ * number across two users refers to two different issues. We require
+ * the viewer to be authenticated and look up THEIR issue with that
+ * number — never any other user's. Otherwise an attacker (or a confused
+ * second user) could read the first-user-with-that-number's digest.
+ *
  * Server Component (RSC). Reads from the DB directly via @cratedigger/db.
  */
+import { redirect } from "next/navigation";
+import type { Route } from "next";
+import { auth } from "@clerk/nextjs/server";
 import { db, schema } from "@cratedigger/db";
 import { and, eq, ne } from "drizzle-orm";
 import { Markdown } from "@/components/Markdown";
 import { buildListenLinks } from "@/lib/listen-links";
+
+const clerkPk = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const clerkEnabled = !!clerkPk && clerkPk.startsWith("pk_");
 
 type PageProps = {
   params: Promise<{ number: string }>;
@@ -36,9 +48,34 @@ export default async function IssuePage({ params }: PageProps) {
     );
   }
 
+  // Resolve the viewer's user_id. When Clerk isn't configured (local
+  // dev without keys), fall through without scoping so the page is
+  // still inspectable in that mode.
+  let userId: string | null = null;
+  if (clerkEnabled) {
+    const { userId: clerkId } = await auth();
+    if (!clerkId) redirect("/sign-in" as Route);
+    const userRows = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.clerkId, clerkId))
+      .limit(1);
+    if (userRows.length === 0) {
+      // Webhook hasn't created the row yet OR the user hasn't onboarded.
+      // Bounce to onboarding which will create the row if needed.
+      redirect("/onboarding");
+    }
+    userId = userRows[0]!.id;
+  }
+
   const issue = await db.query.issues
     .findFirst({
-      where: eq(schema.issues.issueNumber, issueNumber),
+      where: userId
+        ? and(
+            eq(schema.issues.userId, userId),
+            eq(schema.issues.issueNumber, issueNumber),
+          )
+        : eq(schema.issues.issueNumber, issueNumber),
     })
     .catch(() => null);
 

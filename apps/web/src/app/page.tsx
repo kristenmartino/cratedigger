@@ -8,8 +8,9 @@
  *     Sunday" copy (will swap to /issue/[latest] redirect once N≥1 exists)
  */
 import { redirect } from "next/navigation";
+import type { Route } from "next";
 import { auth } from "@clerk/nextjs/server";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db, schema } from "@cratedigger/db";
 import { Wordmark } from "@/components/Wordmark";
 import { AuthButtons } from "@/components/AuthButtons";
@@ -43,6 +44,20 @@ export default async function HomePage() {
       // Webhook hasn't fired yet OR taste profile not set up.
       if (!row || !row.hasProfile) {
         redirect("/onboarding");
+      }
+
+      // If THIS user has at least one issue, route them to their latest.
+      // issue_number is per-user (UNIQUE on (user_id, issue_number)), so a
+      // new user without runs still sees the welcome copy, not someone
+      // else's issues.
+      const latest = await db
+        .select({ issueNumber: schema.issues.issueNumber })
+        .from(schema.issues)
+        .where(eq(schema.issues.userId, row.userId))
+        .orderBy(desc(schema.issues.issueNumber))
+        .limit(1);
+      if (latest[0]) {
+        redirect(`/issue/${latest[0].issueNumber}` as Route);
       }
 
       // Surface the Spotify-connect prompt for users who completed
