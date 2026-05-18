@@ -100,6 +100,37 @@ _ITUNES_LAST_AT = 0.0
 _ITUNES_MIN_INTERVAL = 0.5
 
 
+# ── Self-titled shorthand resolution ────────────────────────────────────
+#
+# Source articles routinely write the title as "S/T" when an album is
+# self-titled (same name as the artist). The LLM extraction preserves
+# that string into `releases.title`, so the row gets stored as
+# `artist="Setting", title="S/T"`. Sending that pair to MB/Spotify/iTunes
+# catalog search produces nonsense — there's no record called "S/T" by
+# anyone; the search returns whichever album HAS "S/T" in its title,
+# which is how Setting matched a Deep Purple Wacken live record.
+#
+# Resolution: before catalog lookup, detect S/T-style shorthand and
+# substitute the artist name (which IS the actual album title for a
+# self-titled record). The stored title stays "S/T" so display, dedup,
+# and downstream consumers see what the source wrote.
+
+_SELF_TITLED_FORMS = frozenset({
+    "s/t", "s.t.", "s t", "st",
+    "self titled", "self-titled", "selftitled",
+    "untitled",  # rarer but same intent
+})
+
+
+def _resolve_title_for_lookup(title: str, artist: str) -> str:
+    """When title is a self-titled shorthand, return the artist name —
+    that's the actual album title catalog services index against.
+    Otherwise return title unchanged."""
+    if title.strip().lower() in _SELF_TITLED_FORMS:
+        return artist
+    return title
+
+
 # ── Artist-match verification ───────────────────────────────────────────
 
 
@@ -656,6 +687,176 @@ async def _itunes_search(
     return None, None
 
 
+# ── URL verification ────────────────────────────────────────────────────
+#
+# The catalog-search paths (Spotify search, iTunes search, Discogs) all
+# call _artists_match on the candidate before accepting. But platform URLs
+# can also arrive from paths that DON'T verify:
+#   - MusicBrainz URL relations (volunteer-contributed; can be wrong)
+#   - article_media.py (extracts first embedded link in a source article;
+#     no association with our target record)
+#
+# Bug case from production (Setting — S/T): the Aquarium Drunkard piece
+# had a Spotify embed for a Deep Purple Wacken live record; article-media
+# parsing grabbed it as if it were Setting's link. Reader clicked Listen,
+# got Deep Purple.
+#
+# The fix: after lookup_release has collected URLs from every source,
+# verify each one against the target artist by fetching that platform's
+# metadata. Mismatches get dropped before persisting. Conservative when
+# verification is impossible (missing creds, network error): preserve the
+# URL rather than risk false drops.
+
+
+_SPOTIFY_ALBUM_ID_RE = re.compile(r"open\.spotify\.com/album/([A-Za-z0-9]{22})")
+_APPLE_MUSIC_ID_RE = re.compile(r"music\.apple\.com/[^/]+/album/[^/]+/(\d+)")
+_BANDCAMP_OG_TITLE_RE = re.compile(
+    r'<meta\s+property="og:title"\s+content="([^"]+)"', re.IGNORECASE
+)
+
+
+async def _verify_spotify_url(
+    http: AsyncSession, url: str, target_artist: str
+) -> bool:
+    """Fetch Spotify's album metadata and verify the artist via
+    `_artists_match`. Returns True when the artist verifies OR when we
+    can't fetch the album at all (preserve URL on infrastructure errors;
+    only drop on a confirmed mismatch)."""
+    m = _SPOTIFY_ALBUM_ID_RE.search(url)
+    if not m:
+        return False  # malformed URL; drop
+    album_id = m.group(1)
+    token = await _spotify_token(http)
+    if not token:
+        return True  # no creds — can't verify, don't drop existing data
+    await _throttle(_SPOTIFY_LOCK, "_SPOTIFY_LAST_AT", _SPOTIFY_MIN_INTERVAL)
+    try:
+        resp = await http.get(
+            f"{SPOTIFY_API_BASE}/albums/{album_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            allow_redirects=True,
+        )
+    except Exception as e:
+        logger.warning("verify spotify %s raised: %s", album_id, e)
+        return True  # transient; preserve
+
+    if resp.status_code == 404 or resp.status_code == 410:
+        logger.info("verify spotify %s gone (%d) — dropping", album_id, resp.status_code)
+        return False
+    if resp.status_code != 200:
+        logger.info("verify spotify %s returned %d — preserving", album_id, resp.status_code)
+        return True
+
+    album = resp.json()
+    candidate = _spotify_album_artist_name(album)
+    if not _artists_match(target_artist, candidate):
+        logger.info(
+            "verify spotify dropped: target %r vs album-artist %r (album=%s)",
+            target_artist, candidate, album_id,
+        )
+        return False
+    return True
+
+
+async def _verify_apple_music_url(
+    http: AsyncSession, url: str, target_artist: str
+) -> bool:
+    """Fetch iTunes Lookup for the album ID embedded in a music.apple.com
+    URL and verify the artistName via `_artists_match`."""
+    m = _APPLE_MUSIC_ID_RE.search(url)
+    if not m:
+        return False
+    collection_id = m.group(1)
+    await _throttle(_ITUNES_LOCK, "_ITUNES_LAST_AT", _ITUNES_MIN_INTERVAL)
+    try:
+        resp = await http.get(
+            "https://itunes.apple.com/lookup",
+            params={"id": collection_id},
+            allow_redirects=True,
+        )
+    except Exception as e:
+        logger.warning("verify apple_music %s raised: %s", collection_id, e)
+        return True
+    if resp.status_code != 200:
+        return True
+    data = resp.json()
+    results = data.get("results") or []
+    if not results:
+        return False
+    candidate = results[0].get("artistName") or ""
+    if not _artists_match(target_artist, candidate):
+        logger.info(
+            "verify apple_music dropped: target %r vs artistName %r (id=%s)",
+            target_artist, candidate, collection_id,
+        )
+        return False
+    return True
+
+
+async def _verify_bandcamp_url(
+    http: AsyncSession, url: str, target_artist: str
+) -> bool:
+    """Fetch the Bandcamp page and parse the og:title meta tag for the
+    artist name. Bandcamp's og:title format is `Album Title, by Artist`.
+
+    On any error, returns True (preserve) rather than drop — Bandcamp HTML
+    is less standardized than the platform APIs and our parser may simply
+    not recognize the shape.
+    """
+    try:
+        resp = await http.get(url, allow_redirects=True)
+    except Exception as e:
+        logger.warning("verify bandcamp %s raised: %s", url, e)
+        return True
+    if resp.status_code == 404 or resp.status_code == 410:
+        logger.info("verify bandcamp %s gone (%d) — dropping", url, resp.status_code)
+        return False
+    if resp.status_code != 200:
+        return True
+    html = resp.text
+    m = _BANDCAMP_OG_TITLE_RE.search(html)
+    if not m:
+        return True
+    og_title = m.group(1)
+    if ", by " not in og_title:
+        return True
+    candidate = og_title.rsplit(", by ", 1)[-1].strip()
+    if not _artists_match(target_artist, candidate):
+        logger.info(
+            "verify bandcamp dropped: target %r vs page-artist %r (url=%s)",
+            target_artist, candidate, url,
+        )
+        return False
+    return True
+
+
+async def _verify_listen_urls(
+    http: AsyncSession, result: dict[str, str | None], target_artist: str
+) -> None:
+    """Verify each platform URL in `result` against `target_artist`. Drops
+    URLs that fail verification (sets the field to None). Modifies `result`
+    in place.
+
+    YouTube URLs aren't verified — video metadata doesn't expose a clean
+    `artist` field, and the YouTube search path already runs
+    `_artists_match` on channelTitle+title before producing a URL, so the
+    false-positive class that hits Spotify/Bandcamp/Apple (via MB rels and
+    article-media parsing) doesn't apply to YouTube the same way.
+    """
+    if result["spotify_url"]:
+        ok = await _verify_spotify_url(http, result["spotify_url"], target_artist)
+        if not ok:
+            result["spotify_url"] = None
+    if result["apple_music_url"]:
+        ok = await _verify_apple_music_url(http, result["apple_music_url"], target_artist)
+        if not ok:
+            result["apple_music_url"] = None
+    if result["bandcamp_url"]:
+        ok = await _verify_bandcamp_url(http, result["bandcamp_url"], target_artist)
+        if not ok:
+            result["bandcamp_url"] = None
+
+
 # ── Public API ──────────────────────────────────────────────────────────
 
 
@@ -694,11 +895,18 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
         "Accept": "application/json",
     }
 
+    # Self-titled shorthand (`title == "S/T"`) gets resolved to the
+    # artist name for catalog lookups — every external service indexes
+    # the real title, not the abbreviation. Only the lookup queries use
+    # the resolved string; the stored title and downstream display stay
+    # whatever the source wrote.
+    search_title = _resolve_title_for_lookup(title, artist)
+
     try:
         async with AsyncSession(
             timeout=15.0, headers=headers, impersonate=IMPERSONATE
         ) as http:
-            mbid = await _mb_search_release_group(http, artist, title)
+            mbid = await _mb_search_release_group(http, artist, search_title)
             if mbid:
                 result["mbid"] = mbid
                 rg = await _mb_lookup_release_group(http, mbid)
@@ -714,7 +922,7 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
             # Skipped if Spotify credentials are unset OR if MB already
             # produced a verified Spotify URL.
             if not result["spotify_url"]:
-                result["spotify_url"] = await _spotify_search_album(http, artist, title)
+                result["spotify_url"] = await _spotify_search_album(http, artist, search_title)
 
             # iTunes Search — free, no auth, gives us both apple_music_url
             # AND a cover-art fallback in a single call. Fire whenever we
@@ -723,7 +931,7 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
             # "is there still anything iTunes might provide" rather than
             # two separate decisions.
             if not result["apple_music_url"] or not result["cover_art_url"]:
-                apple_url, apple_cover = await _itunes_search(http, artist, title)
+                apple_url, apple_cover = await _itunes_search(http, artist, search_title)
                 if not result["apple_music_url"]:
                     result["apple_music_url"] = apple_url
                 if not result["cover_art_url"]:
@@ -739,13 +947,20 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
                 and not result["spotify_url"]
                 and not result["apple_music_url"]
             ):
-                result["youtube_url"] = await _youtube_search(http, artist, title)
+                result["youtube_url"] = await _youtube_search(http, artist, search_title)
 
             # Discogs fallback — only when MB and iTunes both missed a
             # cover, to save quota. The user gave us a Discogs token only
             # as a fill-in.
             if not result["cover_art_url"]:
-                result["cover_art_url"] = await _discogs_cover(http, artist, title)
+                result["cover_art_url"] = await _discogs_cover(http, artist, search_title)
+
+            # Verify every Listen-target URL against the platform's own
+            # metadata. Catches URLs that bypassed the per-search artist
+            # check (MusicBrainz URL relations, article-media parsing).
+            # Drops mismatches; preserves URLs when verification fails
+            # for infrastructure reasons (network, missing creds).
+            await _verify_listen_urls(http, result, artist)
     except Exception as e:
         # Top-level catch so an enrichment failure can't crash the
         # workflow. Empty result is a valid response from this function.

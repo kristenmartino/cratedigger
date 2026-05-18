@@ -17,12 +17,16 @@ from __future__ import annotations
 import asyncio
 
 from agent.sources.metadata import (
+    _APPLE_MUSIC_ID_RE,
+    _BANDCAMP_OG_TITLE_RE,
+    _SPOTIFY_ALBUM_ID_RE,
     _artists_match,
     _itunes_artwork_hires,
     _mb_artist_credit_name,
     _mb_cover_url,
     _normalize_artist,
     _parse_mb_urls,
+    _resolve_title_for_lookup,
     _spotify_album_artist_name,
     _youtube_candidate_artist,
     lookup_release,
@@ -386,3 +390,139 @@ def test_itunes_artwork_passthrough_when_no_size_token():
     misses and we return the input unchanged — never raise."""
     src = "https://example.com/some/other/url"
     assert _itunes_artwork_hires(src) == src
+
+
+# ── URL verification regex extractors ───────────────────────────────────
+#
+# The verify_* functions are HTTP-bound and would require live API mocking
+# to test end-to-end; the regex extractors that pull the platform-specific
+# IDs out of a stored URL are pure and worth pinning.
+
+
+def test_spotify_album_id_extracts_from_standard_url():
+    """Standard share URL — 22-char base62 ID."""
+    m = _SPOTIFY_ALBUM_ID_RE.search(
+        "https://open.spotify.com/album/0I4OoU70unqcUu7G2iqAjK"
+    )
+    assert m and m.group(1) == "0I4OoU70unqcUu7G2iqAjK"
+
+
+def test_spotify_album_id_extracts_with_si_param():
+    m = _SPOTIFY_ALBUM_ID_RE.search(
+        "https://open.spotify.com/album/0I4OoU70unqcUu7G2iqAjK?si=abc123"
+    )
+    assert m and m.group(1) == "0I4OoU70unqcUu7G2iqAjK"
+
+
+def test_spotify_album_id_rejects_track_url():
+    """Track URLs and playlist URLs must not be misread as albums."""
+    assert (
+        _SPOTIFY_ALBUM_ID_RE.search(
+            "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"
+        )
+        is None
+    )
+    assert (
+        _SPOTIFY_ALBUM_ID_RE.search(
+            "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+        )
+        is None
+    )
+
+
+def test_apple_music_id_extracts_from_standard_url():
+    """music.apple.com/us/album/<slug>/<numeric-id>"""
+    m = _APPLE_MUSIC_ID_RE.search(
+        "https://music.apple.com/us/album/setting/1234567890"
+    )
+    assert m and m.group(1) == "1234567890"
+
+
+def test_apple_music_id_extracts_from_other_storefront():
+    """Storefront codes vary (us, gb, de, jp …). Pattern accepts any."""
+    m = _APPLE_MUSIC_ID_RE.search(
+        "https://music.apple.com/jp/album/setting/9876543210"
+    )
+    assert m and m.group(1) == "9876543210"
+
+
+def test_apple_music_id_rejects_artist_url():
+    """An artist-page URL (no /album/<slug>/<id> shape) doesn't match."""
+    assert (
+        _APPLE_MUSIC_ID_RE.search(
+            "https://music.apple.com/us/artist/setting/1234567890"
+        )
+        is None
+    )
+
+
+def test_bandcamp_og_title_extracts_artist():
+    """og:title pattern: 'Album Title, by Artist Name'. The verifier
+    splits on the last ', by ' (some album titles contain commas)."""
+    html = (
+        '<html><head>'
+        '<meta property="og:title" content="Setting, by Setting">'
+        '</head></html>'
+    )
+    m = _BANDCAMP_OG_TITLE_RE.search(html)
+    assert m
+    og_title = m.group(1)
+    assert ", by " in og_title
+    candidate = og_title.rsplit(", by ", 1)[-1]
+    assert candidate == "Setting"
+
+
+def test_bandcamp_og_title_handles_comma_in_album_name():
+    """Album titles with commas: 'Sing, Memory, by Burial' should parse
+    artist as 'Burial', not 'Memory'."""
+    html = '<meta property="og:title" content="Sing, Memory, by Burial">'
+    m = _BANDCAMP_OG_TITLE_RE.search(html)
+    assert m
+    candidate = m.group(1).rsplit(", by ", 1)[-1]
+    assert candidate == "Burial"
+
+
+def test_bandcamp_og_title_returns_none_on_missing_meta():
+    """A page without og:title (rare but possible for older Bandcamp
+    pages or non-standard layouts) — the verifier preserves the URL
+    rather than dropping."""
+    html = "<html><head><title>Some Page</title></head></html>"
+    assert _BANDCAMP_OG_TITLE_RE.search(html) is None
+
+
+# ── _resolve_title_for_lookup ──────────────────────────────────────────
+#
+# When the stored title is a self-titled shorthand, catalog services
+# index the actual album title (which equals the artist). Sending "S/T"
+# to Spotify search returned wrong results (Setting → Deep Purple
+# Wacken). This helper translates shorthand to the artist name for
+# lookup-time only; storage/display keep the original.
+
+
+def test_resolve_slash_t_to_artist():
+    """The 'S/T' shorthand the source articles use most often."""
+    assert _resolve_title_for_lookup("S/T", "Setting") == "Setting"
+
+
+def test_resolve_self_titled_variants():
+    """Common written forms — both 'self titled' and 'self-titled'."""
+    assert _resolve_title_for_lookup("self titled", "Setting") == "Setting"
+    assert _resolve_title_for_lookup("self-titled", "Setting") == "Setting"
+    assert _resolve_title_for_lookup("Self Titled", "Setting") == "Setting"
+
+
+def test_resolve_lowercase_s_slash_t():
+    """Case-insensitive — articles write it both ways."""
+    assert _resolve_title_for_lookup("s/t", "Setting") == "Setting"
+
+
+def test_resolve_passes_real_titles_unchanged():
+    """A normal album title is never the artist — leave it alone."""
+    assert _resolve_title_for_lookup("Untrue", "Burial") == "Untrue"
+    assert _resolve_title_for_lookup("In Wacken", "Deep Purple") == "In Wacken"
+
+
+def test_resolve_handles_whitespace_padding():
+    """Defensive: a stored title might have trailing whitespace from
+    source extraction."""
+    assert _resolve_title_for_lookup("  S/T  ", "Setting") == "Setting"
