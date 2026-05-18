@@ -20,39 +20,76 @@ import { useState, useTransition } from "react";
 const MIN_ARTISTS = 10;
 const MAX_ARTISTS = 50;
 const MIN_TAGS = 3;
-const MAX_TAGS = 12;
 
-// Curated chip list. Broad enough that most listeners find ≥3 honest fits;
-// narrow enough that the matching layer has a tractable label set. The
-// vocabulary matches the keys our scoring layer recognizes (tags coming
-// in from sources or LLM-extracted release blurbs are normalized to this
-// shortlist).
+// Curated chip vocabulary. Tags here MUST match what the scoring layer
+// boosts on — tags from sources' genre_affinity and LLM-extracted blurbs
+// are normalized to this shortlist. Adding a chip here without backing
+// it in the source taxonomy means the user picks something that never
+// matches a release.
+//
+// Order is by family (electronic → guitar-driven → soul/jazz/r&b →
+// country/folk → metal/punk → niche/experimental) so users can scan.
 const TAG_OPTIONS = [
+  // Electronic
   "electronic",
   "techno",
   "house",
+  "minimal",
+  "trance",
+  "drum & bass",
+  "breakbeat",
+  "jungle",
+  "garage",
+  "idm",
+  "downtempo",
+  "trip-hop",
   "ambient",
+  "drone",
   "dub",
   "experimental",
+  "noise",
+  // Indie / rock
   "indie",
+  "alternative",
   "rock",
   "psych",
-  "folk",
+  "shoegaze",
+  "dream pop",
+  "post-rock",
+  "post-punk",
+  "new wave",
+  "prog",
+  "math rock",
+  // Pop / soul / jazz
+  "pop",
   "soul",
   "r&b",
   "hip-hop",
   "jazz",
+  "gospel",
+  "blues",
+  "afrobeats",
+  // Folk / country / Americana
+  "folk",
   "country",
   "americana",
   "bluegrass",
+  // Metal / punk / hardcore
   "metal",
   "punk",
-  "shoegaze",
-  "drum & bass",
-  "downtempo",
+  "hardcore",
+  "emo",
+  // World / classical / niche
   "world",
+  "latin",
   "classical",
+  "field recording",
 ];
+
+// Effective cap is the vocabulary size — picking every chip is "I am
+// a generalist." Anything below MIN_TAGS still surfaces as an error
+// but there's no upper bound the user can hit.
+const MAX_TAGS = TAG_OPTIONS.length;
 
 export function OnboardingForm() {
   const router = useRouter();
@@ -270,14 +307,12 @@ export function OnboardingForm() {
         <p
           className={
             "mt-1 font-mono text-[11px] uppercase tracking-[0.18em] " +
-            (tags.size > MAX_TAGS ||
-            (tags.size > 0 && tags.size < MIN_TAGS)
+            (tags.size > 0 && tags.size < MIN_TAGS
               ? "text-coral"
               : "text-ink-soft")
           }
         >
-          Pick {MIN_TAGS}–{MAX_TAGS} · {tags.size} selected
-          {tags.size >= MAX_TAGS && " · at limit"}
+          Pick at least {MIN_TAGS} · {tags.size} selected
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {TAG_OPTIONS.map((tag) => {
