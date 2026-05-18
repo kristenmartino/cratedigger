@@ -100,6 +100,37 @@ _ITUNES_LAST_AT = 0.0
 _ITUNES_MIN_INTERVAL = 0.5
 
 
+# ── Self-titled shorthand resolution ────────────────────────────────────
+#
+# Source articles routinely write the title as "S/T" when an album is
+# self-titled (same name as the artist). The LLM extraction preserves
+# that string into `releases.title`, so the row gets stored as
+# `artist="Setting", title="S/T"`. Sending that pair to MB/Spotify/iTunes
+# catalog search produces nonsense — there's no record called "S/T" by
+# anyone; the search returns whichever album HAS "S/T" in its title,
+# which is how Setting matched a Deep Purple Wacken live record.
+#
+# Resolution: before catalog lookup, detect S/T-style shorthand and
+# substitute the artist name (which IS the actual album title for a
+# self-titled record). The stored title stays "S/T" so display, dedup,
+# and downstream consumers see what the source wrote.
+
+_SELF_TITLED_FORMS = frozenset({
+    "s/t", "s.t.", "s t", "st",
+    "self titled", "self-titled", "selftitled",
+    "untitled",  # rarer but same intent
+})
+
+
+def _resolve_title_for_lookup(title: str, artist: str) -> str:
+    """When title is a self-titled shorthand, return the artist name —
+    that's the actual album title catalog services index against.
+    Otherwise return title unchanged."""
+    if title.strip().lower() in _SELF_TITLED_FORMS:
+        return artist
+    return title
+
+
 # ── Artist-match verification ───────────────────────────────────────────
 
 
@@ -864,11 +895,18 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
         "Accept": "application/json",
     }
 
+    # Self-titled shorthand (`title == "S/T"`) gets resolved to the
+    # artist name for catalog lookups — every external service indexes
+    # the real title, not the abbreviation. Only the lookup queries use
+    # the resolved string; the stored title and downstream display stay
+    # whatever the source wrote.
+    search_title = _resolve_title_for_lookup(title, artist)
+
     try:
         async with AsyncSession(
             timeout=15.0, headers=headers, impersonate=IMPERSONATE
         ) as http:
-            mbid = await _mb_search_release_group(http, artist, title)
+            mbid = await _mb_search_release_group(http, artist, search_title)
             if mbid:
                 result["mbid"] = mbid
                 rg = await _mb_lookup_release_group(http, mbid)
@@ -884,7 +922,7 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
             # Skipped if Spotify credentials are unset OR if MB already
             # produced a verified Spotify URL.
             if not result["spotify_url"]:
-                result["spotify_url"] = await _spotify_search_album(http, artist, title)
+                result["spotify_url"] = await _spotify_search_album(http, artist, search_title)
 
             # iTunes Search — free, no auth, gives us both apple_music_url
             # AND a cover-art fallback in a single call. Fire whenever we
@@ -893,7 +931,7 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
             # "is there still anything iTunes might provide" rather than
             # two separate decisions.
             if not result["apple_music_url"] or not result["cover_art_url"]:
-                apple_url, apple_cover = await _itunes_search(http, artist, title)
+                apple_url, apple_cover = await _itunes_search(http, artist, search_title)
                 if not result["apple_music_url"]:
                     result["apple_music_url"] = apple_url
                 if not result["cover_art_url"]:
@@ -909,13 +947,13 @@ async def lookup_release(artist: str, title: str) -> dict[str, str | None]:
                 and not result["spotify_url"]
                 and not result["apple_music_url"]
             ):
-                result["youtube_url"] = await _youtube_search(http, artist, title)
+                result["youtube_url"] = await _youtube_search(http, artist, search_title)
 
             # Discogs fallback — only when MB and iTunes both missed a
             # cover, to save quota. The user gave us a Discogs token only
             # as a fill-in.
             if not result["cover_art_url"]:
-                result["cover_art_url"] = await _discogs_cover(http, artist, title)
+                result["cover_art_url"] = await _discogs_cover(http, artist, search_title)
 
             # Verify every Listen-target URL against the platform's own
             # metadata. Catches URLs that bypassed the per-search artist

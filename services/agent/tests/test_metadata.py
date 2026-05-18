@@ -26,6 +26,7 @@ from agent.sources.metadata import (
     _mb_cover_url,
     _normalize_artist,
     _parse_mb_urls,
+    _resolve_title_for_lookup,
     _spotify_album_artist_name,
     _youtube_candidate_artist,
     lookup_release,
@@ -487,3 +488,41 @@ def test_bandcamp_og_title_returns_none_on_missing_meta():
     rather than dropping."""
     html = "<html><head><title>Some Page</title></head></html>"
     assert _BANDCAMP_OG_TITLE_RE.search(html) is None
+
+
+# ── _resolve_title_for_lookup ──────────────────────────────────────────
+#
+# When the stored title is a self-titled shorthand, catalog services
+# index the actual album title (which equals the artist). Sending "S/T"
+# to Spotify search returned wrong results (Setting → Deep Purple
+# Wacken). This helper translates shorthand to the artist name for
+# lookup-time only; storage/display keep the original.
+
+
+def test_resolve_slash_t_to_artist():
+    """The 'S/T' shorthand the source articles use most often."""
+    assert _resolve_title_for_lookup("S/T", "Setting") == "Setting"
+
+
+def test_resolve_self_titled_variants():
+    """Common written forms — both 'self titled' and 'self-titled'."""
+    assert _resolve_title_for_lookup("self titled", "Setting") == "Setting"
+    assert _resolve_title_for_lookup("self-titled", "Setting") == "Setting"
+    assert _resolve_title_for_lookup("Self Titled", "Setting") == "Setting"
+
+
+def test_resolve_lowercase_s_slash_t():
+    """Case-insensitive — articles write it both ways."""
+    assert _resolve_title_for_lookup("s/t", "Setting") == "Setting"
+
+
+def test_resolve_passes_real_titles_unchanged():
+    """A normal album title is never the artist — leave it alone."""
+    assert _resolve_title_for_lookup("Untrue", "Burial") == "Untrue"
+    assert _resolve_title_for_lookup("In Wacken", "Deep Purple") == "In Wacken"
+
+
+def test_resolve_handles_whitespace_padding():
+    """Defensive: a stored title might have trailing whitespace from
+    source extraction."""
+    assert _resolve_title_for_lookup("  S/T  ", "Setting") == "Setting"
