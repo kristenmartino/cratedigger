@@ -1,29 +1,43 @@
 name: smoke run (agent)
 
-# Fires POST /v1/run-issue on the deployed Railway agent. Triggers one full
-# pipeline run for a user — ingest → extract → normalize → embed → score →
-# categorize → prose → quote → editor note → persist → render → send.
+# Trigger one full pipeline run — ingest → extract → normalize → embed →
+# score → categorize → prose → quote → editor note → persist → render →
+# send → sync spotify playlist.
+#
+# Two modes:
+#   - Single user  → fires POST /v1/run-issue on the Railway agent directly
+#   - All users    → fires POST /api/cron/run-issue on the Vercel web app,
+#                    which enumerates users-with-profiles and fan-outs the
+#                    same way the Sunday cron does
 #
 # Manual-only (workflow_dispatch). Path triggers are intentionally NOT wired
 # because every run spends Anthropic + Voyage tokens and sends an email.
 #
 # Required repo secrets:
-#   AGENT_URL           — e.g. https://cratedigger-agent-production.up.railway.app
-#   PIPELINE_API_KEY    — same value as on the Railway agent service
+#   Single-user mode:
+#     AGENT_URL           — e.g. https://cratedigger-agent-production.up.railway.app
+#     PIPELINE_API_KEY    — same value as on the Railway agent service
+#   All-users mode:
+#     CRON_SECRET         — same value as on the Vercel web app
+#     WEB_BASE_URL        — optional; defaults to https://cratedigger.kristenmartino.ai
 #
 # After the workflow returns, the pipeline keeps running in the background
-# on Railway. Watch progress by querying the agent_runs row by the printed
-# agent_run_id, or by tailing Railway logs.
+# on Railway. Watch progress by querying agent_runs or tailing Railway logs.
 
 on:
   workflow_dispatch:
     inputs:
+      all_users:
+        description: "Run for every user with a taste profile (uses cron fan-out)"
+        required: false
+        default: false
+        type: boolean
       user_id:
-        description: "Clerk-mapped UUID of the user to generate an issue for"
-        required: true
+        description: "Single user mode: Clerk-mapped UUID. Ignored when all_users=true."
+        required: false
         type: string
       force:
-        description: "Bypass the duplicate-publish-date guard"
+        description: "Single user mode: bypass the duplicate-publish-date guard"
         required: false
         default: true
         type: boolean
@@ -33,7 +47,54 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: POST /v1/run-issue
+      - name: Fan out via Vercel cron route (all users)
+        if: ${{ github.event.inputs.all_users == 'true' }}
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+        run: |
+          set -eu
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::CRON_SECRET repo secret is not set"
+            exit 1
+          fi
+          BASE_URL="${WEB_BASE_URL:-https://cratedigger.kristenmartino.ai}"
+          ENDPOINT="$BASE_URL/api/cron/run-issue"
+          echo "Target: $ENDPOINT"
+
+          HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$ENDPOINT" \
+            -H "Authorization: Bearer $CRON_SECRET")
+
+          echo "HTTP $HTTP_CODE"
+          echo "Response body:"
+          cat /tmp/resp.json
+          echo
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Non-2xx response from Vercel cron route"
+            exit 1
+          fi
+
+          COUNT=$(jq -r '.count // empty' < /tmp/resp.json)
+          {
+            echo '## All-users smoke run triggered'
+            echo
+            echo "- **users triggered:** \`${COUNT:-unknown}\`"
+            echo "- **endpoint:** \`$ENDPOINT\`"
+            echo
+            echo 'Each user has a separate agent_run firing on Railway.'
+            echo 'sync_spotify_node runs at the end of every per-user pipeline.'
+            echo
+            echo '### Full response'
+            echo '```json'
+            jq . < /tmp/resp.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: POST /v1/run-issue (single user)
+        if: ${{ github.event.inputs.all_users != 'true' }}
         env:
           AGENT_URL: ${{ secrets.AGENT_URL }}
           PIPELINE_KEY: ${{ secrets.PIPELINE_API_KEY }}
@@ -42,6 +103,10 @@ jobs:
         run: |
           set -eu
 
+          if [ -z "${USER_ID:-}" ]; then
+            echo "::error::user_id is required when all_users is false"
+            exit 1
+          fi
           if [ -z "${AGENT_URL:-}" ]; then
             echo "::error::AGENT_URL repo secret is not set"
             exit 1
@@ -92,7 +157,7 @@ jobs:
             echo
             echo 'Pipeline is now running in the background on Railway.'
             echo 'Watch progress via:'
-            echo "- Supabase \`agent_runs\` row (\`id = '$AGENT_RUN_ID'\`)"
+            echo "- Neon \`agent_runs\` row (\`id = '$AGENT_RUN_ID'\`)"
             echo '- Railway logs for the agent service'
             echo
             echo '### Full response'
