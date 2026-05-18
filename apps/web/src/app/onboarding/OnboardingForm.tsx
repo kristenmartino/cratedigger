@@ -20,39 +20,76 @@ import { useState, useTransition } from "react";
 const MIN_ARTISTS = 10;
 const MAX_ARTISTS = 50;
 const MIN_TAGS = 3;
-const MAX_TAGS = 12;
 
-// Curated chip list. Broad enough that most listeners find ≥3 honest fits;
-// narrow enough that the matching layer has a tractable label set. The
-// vocabulary matches the keys our scoring layer recognizes (tags coming
-// in from sources or LLM-extracted release blurbs are normalized to this
-// shortlist).
+// Curated chip vocabulary. Tags here MUST match what the scoring layer
+// boosts on — tags from sources' genre_affinity and LLM-extracted blurbs
+// are normalized to this shortlist. Adding a chip here without backing
+// it in the source taxonomy means the user picks something that never
+// matches a release.
+//
+// Order is by family (electronic → guitar-driven → soul/jazz/r&b →
+// country/folk → metal/punk → niche/experimental) so users can scan.
 const TAG_OPTIONS = [
+  // Electronic
   "electronic",
   "techno",
   "house",
+  "minimal",
+  "trance",
+  "drum & bass",
+  "breakbeat",
+  "jungle",
+  "garage",
+  "idm",
+  "downtempo",
+  "trip-hop",
   "ambient",
+  "drone",
   "dub",
   "experimental",
+  "noise",
+  // Indie / rock
   "indie",
+  "alternative",
   "rock",
   "psych",
-  "folk",
+  "shoegaze",
+  "dream pop",
+  "post-rock",
+  "post-punk",
+  "new wave",
+  "prog",
+  "math rock",
+  // Pop / soul / jazz
+  "pop",
   "soul",
   "r&b",
   "hip-hop",
   "jazz",
+  "gospel",
+  "blues",
+  "afrobeats",
+  // Folk / country / Americana
+  "folk",
   "country",
   "americana",
   "bluegrass",
+  // Metal / punk / hardcore
   "metal",
   "punk",
-  "shoegaze",
-  "drum & bass",
-  "downtempo",
+  "hardcore",
+  "emo",
+  // World / classical / niche
   "world",
+  "latin",
   "classical",
+  "field recording",
 ];
+
+// Effective cap is the vocabulary size — picking every chip is "I am
+// a generalist." Anything below MIN_TAGS still surfaces as an error
+// but there's no upper bound the user can hit.
+const MAX_TAGS = TAG_OPTIONS.length;
 
 export function OnboardingForm() {
   const router = useRouter();
@@ -126,8 +163,14 @@ export function OnboardingForm() {
   const toggleTag = (tag: string) => {
     setTags((prev) => {
       const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
+      if (next.has(tag)) {
+        next.delete(tag);
+      } else if (next.size < MAX_TAGS) {
+        // Refuse the add when at the cap. Without this, users picked
+        // 20 chips, ran straight into the artists-too-few message,
+        // and never saw the tag-count violation surfaced.
+        next.add(tag);
+      }
       return next;
     });
   };
@@ -136,20 +179,33 @@ export function OnboardingForm() {
     e.preventDefault();
     setError(null);
 
+    // Collect ALL validation problems so the user sees every issue in
+    // one pass — first-fail returns made the form feel like a
+    // whack-a-mole.
+    const problems: string[] = [];
     if (artists.length < MIN_ARTISTS) {
-      setError(`At least ${MIN_ARTISTS} artists, please.`);
-      return;
-    }
-    if (artists.length > MAX_ARTISTS) {
-      setError(`Whoa — keep it under ${MAX_ARTISTS}.`);
-      return;
+      problems.push(
+        `Need ${MIN_ARTISTS - artists.length} more artist${
+          MIN_ARTISTS - artists.length === 1 ? "" : "s"
+        }.`,
+      );
+    } else if (artists.length > MAX_ARTISTS) {
+      problems.push(`Trim to ${MAX_ARTISTS} artists or fewer.`);
     }
     if (tags.size < MIN_TAGS) {
-      setError(`Pick at least ${MIN_TAGS} tags.`);
-      return;
+      problems.push(
+        `Pick ${MIN_TAGS - tags.size} more tag${
+          MIN_TAGS - tags.size === 1 ? "" : "s"
+        }.`,
+      );
+    } else if (tags.size > MAX_TAGS) {
+      // Belt-and-suspenders: toggleTag prevents reaching this state on
+      // new selections, but a stale form (e.g. constants tightened
+      // after the user loaded the page) could still trip it.
+      problems.push(`Deselect ${tags.size - MAX_TAGS} tags.`);
     }
-    if (tags.size > MAX_TAGS) {
-      setError(`At most ${MAX_TAGS} tags.`);
+    if (problems.length > 0) {
+      setError(problems.join(" "));
       return;
     }
 
@@ -218,8 +274,19 @@ export function OnboardingForm() {
         >
           Artists you actually listen to
         </label>
-        <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-soft">
+        <p
+          className={
+            "mt-1 font-mono text-[11px] uppercase tracking-[0.18em] " +
+            (artists.length > MAX_ARTISTS ||
+            (artists.length > 0 && artists.length < MIN_ARTISTS)
+              ? "text-coral"
+              : "text-ink-soft")
+          }
+        >
           One per line · {artists.length}/{MAX_ARTISTS}
+          {artists.length < MIN_ARTISTS &&
+            artists.length > 0 &&
+            ` · need ${MIN_ARTISTS - artists.length} more`}
         </p>
         <textarea
           id="artists"
@@ -237,21 +304,35 @@ export function OnboardingForm() {
         <span className="block font-display italic text-[20px] text-ink">
           Genres that feel honest
         </span>
-        <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-soft">
-          Pick {MIN_TAGS}–{MAX_TAGS} · {tags.size} selected
+        <p
+          className={
+            "mt-1 font-mono text-[11px] uppercase tracking-[0.18em] " +
+            (tags.size > 0 && tags.size < MIN_TAGS
+              ? "text-coral"
+              : "text-ink-soft")
+          }
+        >
+          Pick at least {MIN_TAGS} · {tags.size} selected
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {TAG_OPTIONS.map((tag) => {
             const on = tags.has(tag);
+            // At the cap, unselected chips dim out — the click is a
+            // no-op (toggleTag refuses). Selected chips stay clickable
+            // so the user can deselect to make room.
+            const atCap = !on && tags.size >= MAX_TAGS;
             return (
               <button
                 type="button"
                 key={tag}
                 onClick={() => toggleTag(tag)}
+                disabled={atCap}
                 className={
                   "px-3 py-1.5 rounded-full text-[13px] font-body border transition-colors " +
                   (on
                     ? "bg-coral text-paper border-coral"
+                    : atCap
+                    ? "bg-paper text-ink/30 border-ink/10 cursor-not-allowed"
                     : "bg-paper text-ink border-ink/25 hover:border-ink/50")
                 }
               >

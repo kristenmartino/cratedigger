@@ -30,7 +30,9 @@ export const dynamic = "force-dynamic";
 const MIN_ARTISTS = 10;
 const MAX_ARTISTS = 50;
 const MIN_TAGS = 3;
-const MAX_TAGS = 12;
+// Loose upper bound — the client cap matches the chip vocabulary
+// (currently ~50). Picking every available genre is allowed.
+const MAX_TAGS = 60;
 
 const OnboardingSchema = z.object({
   artists: z
