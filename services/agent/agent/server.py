@@ -2,9 +2,13 @@
 
 Two responsibilities:
 
-1. **Background batch poller** — started in the lifespan, polls Anthropic
-   Message Batches every 60s and writes results to DB when ready.
-   Without this, batched prose generation never lands.
+1. **Batch recovery** — the pipeline generates prose live
+   (`prose.generate_prose_live`), so `api_batches` is empty in practice.
+   The poller is therefore armed only when a batch genuinely exists: once at
+   startup, at submit time, or via POST /v1/internal/poll-batches — and it
+   exits as soon as nothing is pending. It previously ran unconditionally
+   every 60s against that empty table, which kept Neon's compute awake 24/7
+   and was the project's largest database cost.
 
 2. **HMAC-checked /v1/run-issue endpoint** — the trigger for the weekly
    LangGraph pipeline. Called by Vercel cron (Saturday 9pm ET) via the
@@ -24,14 +28,16 @@ import hmac
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from agent.batch_poller import run_batch_poller
+from agent.batch_client import count_pending_batches
+from agent.batch_poller import ensure_poller_running, poller_is_running, sweep_once
 from agent.config import settings
-from agent.db import close_pool, get_pool, init_pool
+from agent.db import close_pool, get_pool
 from agent.friday_drop import deliver_friday_drops_for_user
 from agent.ingestion.seed_profile import (
     build_profile_from_seed,
@@ -49,6 +55,14 @@ logger = logging.getLogger("cratedigger-agent.server")
 API_VERSION = "0.1.0"
 
 
+def _database_host() -> str:
+    """Host portion of DATABASE_URL, for logging. Never returns credentials."""
+    try:
+        return urlsplit(settings.database_url).hostname or "unknown"
+    except Exception:
+        return "unparseable"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
@@ -60,23 +74,30 @@ async def lifespan(app: FastAPI):
             "Set a strong, unique key matching the value used by the cron caller."
         )
 
-    try:
-        await init_pool()
-        logger.info("Database pool initialized")
-    except Exception as e:
-        logger.warning("Failed to connect to database: %s", e)
+    # No pool init here on purpose — connections opened at startup are held
+    # for the life of the process, which stops Neon from ever suspending its
+    # compute. The pool is created lazily on first query (agent/db.py).
+    logger.info("Database configured (host=%s)", _database_host())
 
-    # Long-running batch poller in production only. In dev, run via
-    # `python -m agent.batch_poller` if you want to test the loop.
-    poller_task = None
-    if settings.environment == "production":
-        poller_task = asyncio.create_task(run_batch_poller())
-        logger.info("Batch poller task started")
+    # Startup re-arm for the batch poller, which no longer runs on a timer.
+    # Its state is in-process, so a redeploy mid-batch would otherwise orphan
+    # one. Exactly ONE query at boot decides whether to arm — not one per
+    # minute, which is what this replaced. The 48h bound stops an ancient
+    # stuck row from re-arming the poller on every boot forever.
+    try:
+        pending = await count_pending_batches(within_seconds=48 * 60 * 60)
+        if pending:
+            logger.info("Found %d pending batch(es) at startup — arming poller", pending)
+            ensure_poller_running()
+        else:
+            logger.info("No pending batches at startup — poller idle")
+    except Exception as e:
+        # A Neon hiccup at boot must not crash the service. POST
+        # /v1/internal/poll-batches (or the next submit) re-arms.
+        logger.warning("Startup batch check failed: %s", e)
 
     yield
 
-    if poller_task:
-        poller_task.cancel()
     await close_pool()
     logger.info("cratedigger-agent shut down")
 
@@ -141,7 +162,9 @@ async def root():
         "version": API_VERSION,
         "endpoints": {
             "health": "GET /health",
+            "health_db": "GET /health/db",
             "run_issue": "POST /v1/run-issue",
+            "poll_batches": "POST /v1/internal/poll-batches",
             "friday_drop": "POST /v1/friday-drop",
             "build_taste_profile": "POST /v1/build-taste-profile",
             "parse_playlist": "POST /v1/parse-playlist",
@@ -150,20 +173,77 @@ async def root():
     }
 
 
-@app.get("/health", summary="Health check")
+@app.get("/health", summary="Liveness check")
 async def health():
+    """Liveness only — deliberately does NOT touch Postgres.
+
+    This is Railway's deploy gate. Querying the DB here would fail deploys
+    whenever Neon's compute is suspended, and would turn any uptime monitor
+    pointed at this path into a keepalive that prevents suspension. Use
+    /health/db when you actually want to know about the database.
+    """
+    return {
+        "status": "healthy",
+        "version": API_VERSION,
+        "db_connected": None,
+        "poller_running": poller_is_running(),
+    }
+
+
+@app.get("/health/db", summary="Database connectivity check")
+async def health_db():
+    """Real connectivity check.
+
+    WARNING: this opens a connection and therefore *resumes* the Neon
+    compute. For humans and low-frequency (daily at most) checks only —
+    never point an uptime monitor here.
+    """
     db_connected = False
     try:
         pool = await get_pool()
         await pool.fetchval("SELECT 1")
         db_connected = True
-    except Exception:
-        pass
-    return {
+    except Exception as e:
+        logger.warning("Database health check failed: %s", e)
+
+    body = {
         "status": "healthy" if db_connected else "degraded",
         "version": API_VERSION,
         "db_connected": db_connected,
     }
+    if not db_connected:
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=body)
+    return body
+
+
+@app.post(
+    "/v1/internal/poll-batches",
+    summary="Force a one-off sweep for completed Message Batches",
+)
+async def poll_batches(
+    x_pipeline_key: str | None = Header(default=None, alias="X-Pipeline-Key"),
+):
+    """Manual recovery hatch for an orphaned batch.
+
+    Runs a single poll pass and re-arms the background poller if anything is
+    still pending. Only relevant if the batch path is revived — the live
+    pipeline generates prose synchronously.
+    """
+    _verify_pipeline_key(x_pipeline_key)
+
+    try:
+        pending = await sweep_once()
+    except Exception as e:
+        logger.error("Manual batch sweep failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Sweep failed: {e}",
+        )
+
+    if pending:
+        ensure_poller_running()
+
+    return {"pending": pending, "poller_running": poller_is_running()}
 
 
 @app.post(

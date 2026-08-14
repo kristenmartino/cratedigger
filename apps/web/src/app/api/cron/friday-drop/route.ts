@@ -36,7 +36,7 @@ interface DropResult {
   error?: string;
 }
 
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   const expected = process.env.CRON_SECRET;
   if (!expected) {
     console.error("CRON_SECRET not configured");
@@ -155,3 +155,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Internal", message }, { status: 500 });
   }
 }
+
+// Vercel Cron issues a GET, so a POST-only route 405s every Friday and the
+// withheld record is never revealed. POST stays for manual triggering.
+export const GET = handler;
+export const POST = handler;

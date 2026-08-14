@@ -1,7 +1,7 @@
 /**
  * Vercel cron → trigger the weekly Crate Digger pipeline.
  *
- * Schedule lives in vercel.json. Vercel cron requests carry an
+ * Schedule lives in vercel.json. Vercel cron issues a GET carrying an
  * `Authorization: Bearer <CRON_SECRET>` header that we verify before
  * forwarding to the Railway agent service. The agent service then
  * verifies its own `X-Pipeline-Key` header before kicking off the
@@ -40,7 +40,7 @@ interface TriggerResult {
   error?: string;
 }
 
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   // Vercel cron auth — sends Authorization: Bearer <CRON_SECRET> automatically
   const expected = process.env.CRON_SECRET;
   if (!expected) {
@@ -138,3 +138,9 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+// Vercel Cron invokes the scheduled path with GET, so a POST-only route
+// silently 405s every week and the pipeline never runs. POST stays exported
+// for manual triggering.
+export const GET = handler;
+export const POST = handler;

@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,13 +20,21 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
-from app.db import close_pool, get_pool, init_pool
+from app.db import close_pool, get_pool
 from app.dependencies import limiter
 from app.models import HealthResponse
 
 logger = logging.getLogger("cratedigger-api")
 
 API_VERSION = "0.1.0"
+
+
+def _database_host() -> str:
+    """Host portion of DATABASE_URL, for logging. Never returns credentials."""
+    try:
+        return urlsplit(settings.database_url).hostname or "unknown"
+    except Exception:
+        return "unparseable"
 
 
 @asynccontextmanager
@@ -39,11 +48,12 @@ async def lifespan(app: FastAPI):
             "Set a strong, unique key via the PIPELINE_API_KEY environment variable."
         )
 
-    try:
-        await init_pool()
-        logger.info("Database pool initialized")
-    except Exception as e:
-        logger.warning("Failed to connect to database: %s", e)
+    # No pool init here on purpose. Opening connections at startup pins them
+    # for the life of the process, which stops Neon from ever suspending its
+    # compute. The pool is created lazily on first query (app/db.py) and its
+    # connections are reaped 30s after the last one. Log the target host so a
+    # misconfigured DATABASE_URL is still diagnosable without a startup query.
+    logger.info("Database configured (host=%s)", _database_host())
 
     yield
 
@@ -138,18 +148,40 @@ async def root():
     }
 
 
-@app.get("/health", response_model=HealthResponse, summary="Health check")
+@app.get("/health", response_model=HealthResponse, summary="Liveness check")
 async def health():
+    """Liveness only — deliberately does NOT touch Postgres.
+
+    This is Railway's deploy gate. Querying the DB here would (a) fail a
+    deploy whenever Neon's compute happens to be suspended and (b) turn any
+    external uptime monitor into a keepalive that stops Neon from ever
+    suspending. `db_connected` is None because it was not checked; use
+    /health/db when you actually want to know.
+    """
+    return HealthResponse(status="healthy", version=API_VERSION)
+
+
+@app.get("/health/db", response_model=HealthResponse, summary="Database connectivity check")
+async def health_db():
+    """Real connectivity check.
+
+    WARNING: calling this opens a connection and therefore *resumes* the
+    Neon compute. It is for humans and low-frequency (daily at most) checks.
+    Never point an uptime monitor at this path — use /health.
+    """
     db_connected = False
     try:
         pool = await get_pool()
         await pool.fetchval("SELECT 1")
         db_connected = True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Database health check failed: %s", e)
 
-    return HealthResponse(
+    body = HealthResponse(
         status="healthy" if db_connected else "degraded",
         version=API_VERSION,
         db_connected=db_connected,
     )
+    if not db_connected:
+        return JSONResponse(status_code=503, content=body.model_dump())
+    return body

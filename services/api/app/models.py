@@ -27,7 +27,9 @@ AgentRunStatus = Literal["running", "completed", "failed"]
 class HealthResponse(BaseModel):
     status: str
     version: str
-    db_connected: bool
+    # None means "not checked" — /health is liveness-only and deliberately
+    # does not query Postgres (see app/main.py). /health/db sets a bool.
+    db_connected: bool | None = None
 
 
 # ── Matched signal (the "Why this matched you" tags) ────────────────────
