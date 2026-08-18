@@ -29,6 +29,12 @@ on:
       - "services/agent/scripts/rebuild_taste_profile.py"
       - ".github/workflows/rebuild-taste-profile.yml"
 
+# Serialize, never cancel. This workflow changes state rather than reporting on
+# it, so an interrupted run is worse than a queued one.
+concurrency:
+  group: rebuild-taste-profile
+  cancel-in-progress: false
+
 jobs:
   rebuild:
     runs-on: ubuntu-latest

@@ -42,6 +42,12 @@ on:
         default: true
         type: boolean
 
+# Serialize, never cancel. This workflow changes state rather than reporting on
+# it, so an interrupted run is worse than a queued one.
+concurrency:
+  group: smoke-run
+  cancel-in-progress: false
+
 jobs:
   trigger:
     runs-on: ubuntu-latest
