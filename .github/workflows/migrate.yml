@@ -33,6 +33,12 @@ on:
       - "services/agent/scripts/sync_sources.py"
       - ".github/workflows/migrate.yml"
 
+# Serialize, never cancel. This workflow changes state rather than reporting on
+# it, so an interrupted run is worse than a queued one.
+concurrency:
+  group: migrate
+  cancel-in-progress: false
+
 jobs:
   migrate:
     runs-on: ubuntu-latest

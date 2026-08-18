@@ -5,9 +5,18 @@ on:
     branches: [main]
   pull_request:
 
+# Supersede in-flight runs for the same pull request; pushing twice used to run
+# both to completion. Keyed by SHA on push so a branch/main run is never
+# cancelled — cancellation follows workflow start order, not commit order, so
+# cancelling a push run risks the newest commit never being the one validated.
+concurrency:
+  group: api-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   api:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: services/api
@@ -31,6 +40,7 @@ jobs:
 
   agent:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: services/agent
